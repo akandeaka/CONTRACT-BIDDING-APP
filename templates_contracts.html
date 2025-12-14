@@ -1,0 +1,6 @@
+<h2>Available Contracts</h2>
+<ul>
+{% for contract in contracts %}
+  <li><a href="/contracts/{{ loop.index0 }}">{{ contract.project_name }}</a></li>
+{% endfor %}
+</ul>
