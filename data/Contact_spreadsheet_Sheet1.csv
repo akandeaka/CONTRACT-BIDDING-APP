@@ -1,0 +1,104 @@
+project_id,project_name,primary_state,geopolitical_zone,award_year,award_month,cost_ngn_billion,contractor,latitude_start,longitude_start,estimated_length_km,terrain_type,terrain_description,rainfall_mm_per_year,soil_type,elevation_m,has_bridge,is_dual_carriageway,is_rehabilitation,is_coastal_or_swamp,boq_earthworks_m3_per_km,boq_asphalt_ton_per_km,boq_drainage_km_per_km,boq_bridges_units,boq_culverts_units,boq_premium_percent,generic_boq_notes
+1,Zaria–Katsina Road,Kaduna,North West,2025,3,198,Mothercat Nigeria Ltd,11.11,7.72,120,Savanna,"Flat dry savanna, sandy",450,Sandy Loam,380,1,1,0,0,1200,280,0.8,4,120,8,"Dry terrain, low drainage, dust control +5%"
+2,Bagudu Road,Kebbi,North West,2025,3,2.64,RCC,13.06,5.24,20,Savanna,"Arid plains, low vegetation",380,Loamy Sand,360,0,0,0,0,800,200,0.3,0,15,3,Very low-cost rural road
+3,Gada–Zamazuru–Gamji Road,Kebbi,North West,2025,3,11.97,JULIUS BERGER,12.5,5.5,35,Savanna,"Dry grassland, seasonal streams",420,Sandy,370,0,0,0,0,1000,240,0.5,1,30,5,"Gravel suitable, dust mitigation"
+4,Zaria–Hunkuyi–Kolomani–Dan Bali–Maraba Road,Kaduna,North West,2025,3,679,JULIUS BERGER,11.05,7.65,300,Savanna,"Rolling savanna, stable subsoil",480,Clay Loam,400,1,1,0,0,1400,320,0.9,10,250,10,Major multi-lot project
+5,Jos–Turunkun–Maraban Jama’a Road (Rehab),Kaduna,North West,2025,11,30,RCCG,9.93,8.89,50,Plateau,"Plateau edges, rocky, erosion risk",850,Rocky Loam,1200,0,0,1,0,1100,260,1.2,1,60,12,Rehab + rock blasting
+6,Kano–Maiduguri Road (NW Section),Kano,North West,2025,3,128.39,Tractor Nigeria Ltd,12,8.52,150,Savanna,"Semi-arid, wind erosion",400,Sandy,360,1,1,0,0,1300,300,0.7,2,150,8,Long-haul reinforced base
+7,Sokoto–Badagry Superhighway (NW Section),Sokoto,North West,2025,11,551.5,RCCC,13.08,5.25,350,Sahel,"Desert fringe, sandy dunes",320,Sand,350,1,1,0,0,1600,350,0.9,8,300,12,Geotextile sand stabilization
+8,Wudil–Kwanar Huguma Road (Rehab),Kano,North West,2024,2,45,RCCC,11.78,8.87,40,Savanna,"Flat farmlands, clay soils",500,Clay Loam,380,0,0,1,0,900,220,0.6,0,40,5,Budget rehab
+9,Gulu Bridge & Approach Roads,Kano,North West,2023,1,12,Garit Nigeria Ltd,12,8.52,15,Riverine,"Seasonal flooding, elevated",550,Silty Loam,370,1,0,0,0,1500,300,1,2,25,18,Flood-proof approaches
+10,Mararaba–Bali Road,Taraba,North West,2025,3,15,Moulds Nigeria Ltd,8.5,10,50,Transitional,"Moderate slopes, stable",750,Loam,450,0,0,0,0,1100,250,0.8,1,50,6,Standard savanna pricing
+11,Abuja–Kaduna–Zaria–Kano Road,Kaduna,North West,2024,9,507,InfoWest Nigeria Ltd,9,7.5,164,Savanna,Hilly rocky sections,600,Rocky Loam,500,1,1,0,0,1600,340,1,5,180,15,Rigid pavement +12% hills
+12,Katsina Rural Access Roads,Katsina,North West,2024,7,25,Local Consortium,13,7.5,80,Savanna,Arid bushland,400,Sandy,370,0,0,0,0,950,230,0.5,0,60,4,Gravel suitable
+13,Jigawa Flood Rehab Roads,Jigawa,North West,2024,4,18,JULIUS BERGER,12.45,9.25,60,Floodplain,"Alluvial soils, high drains",550,Silt,350,0,0,1,0,1100,260,1.4,0,100,14,Flood resilience +10%
+14,Zamfara Border Roads,Zamfara,North West,2024,11,32,Security-Funded,12.1,6,70,Semi-Desert,"Rocky, security fencing",380,Rocky Sand,400,0,0,0,0,1000,240,0.6,0,50,15,Security features +15%
+15,Sokoto Urban Links,Sokoto,North West,2025,3,40,Urban Dev Ltd,13.08,5.24,50,Urban Savanna,"Compact soils, traffic",350,Clay Loam,360,0,0,0,0,1300,300,1,1,70,12,Urban density premium
+16,Kebbi River Crossings,Kebbi,North West,2024,6,22,Bridge Specialists,12.5,4.5,30,Riverine,"Soft banks, piling",450,Silty,340,1,0,0,0,1800,350,1.2,3,40,22,Piling +20%
+17,Kano–Zaria Spur,Kano,North West,2024,10,150,Tractor Extension,11.9,8.4,100,Savanna,Agricultural plains,480,Loam,380,0,1,0,0,1250,290,0.8,2,90,8,Easy terrain
+18,Kaduna North Highways,Kaduna,North West,2025,5,280,Julius Berger,10.5,7.4,200,Savanna,"Northern hills, granite",550,Rocky Loam,450,1,1,0,0,1500,330,1,6,180,14,Durable stone base
+19,Katsina–Dutsinma Road,Katsina,North West,2025,2,55,B AND TEE,12.45,7.6,90,Savanna,Dry scrubland,420,Sandy Loam,360,0,0,0,0,1050,250,0.7,1,70,6,Cost-efficient
+20,Jigawa East–West Link,Jigawa,North West,2025,9,68,Julius Berger,12.2,9.8,120,Savanna,Flat wetlands edge,500,Silty Loam,340,0,1,0,0,1300,300,1.1,2,110,10,Seasonal moisture +10%
+21,Aakalari–Ukuk Road,Bauchi,North East,2025,3,11.27,RCCG,10.31,9.84,50,Semi-Arid,"Rocky hills, blasting",550,Rocky,900,0,0,0,0,1400,280,0.7,1,45,15,Rock excavation +12%
+22,Kano–Maiduguri Road (NE Section),Borno,North East,2025,3,128.39,Tractor Nigeria Ltd,11.84,13.15,200,Sahel,Arid sand drifts,300,Sand,340,1,1,0,0,1600,340,0.6,3,180,10,Sand control + geotextile
+23,Wukari–Aquana Road,Taraba,North East,2025,3,12.61,RCCG,7.87,9.78,40,Hilly,"Steep slopes, terracing",950,Clay,800,0,0,0,0,1800,320,1.1,2,60,18,High cut/fill +15%
+24,Mararaba–Bali Road,Taraba,North East,2025,3,15,Moulds Nigeria Ltd,8.5,10,50,Floodplain,"Riverside, flood-prone",1100,Silty Clay,420,0,0,0,0,1300,290,1.8,1,80,22,Flood resilient +18%
+25,Charm–Numan Road & Bridge,Adamawa,North East,2025,3,20,Julius Berger,9.2,12.5,60,Floodplain,"Clay-heavy, high drainage",1100,Silty Clay,420,1,0,0,0,1300,290,1.8,1,80,22,Flood resilient +18%
+26,Vandeikya–Obudu Cattle Ranch Road,Benue,North East,2024,2,25,CCECC Nigeria Ltd,6.88,8.8,60,Hilly,"Volcanic soils, stable",850,Clay Loam,700,0,0,0,0,1400,300,0.9,1,50,10,Standard hilly
+27,Aba–Maiduguri Corridor (NE),Borno,North East,2024,7,50,Julius Berger,11.84,13.15,100,Sahel,"Desert edges, heat",280,Sand,330,0,1,0,0,1500,330,0.6,2,90,12,Heat-resistant asphalt
+28,Gombe–Bauchi Road Rehab,Gombe,North East,2024,11,28,rccg,10.29,11.17,70,Undulating,Laterite base,750,Laterite,650,0,0,1,0,1000,240,0.8,0,60,6,Low-cost overlay
+29,Yobe Flood-Prone Roads,Yobe,North East,2025,3,10,julius berger,11.83,11.5,30,Flood Basin,"Silty, heavy culverts",650,Silt,360,0,0,0,0,1000,240,2.2,0,90,25,Extreme drainage +20%
+30,Taraba Rural Access Roads,Taraba,North East,2024,1,50,Excelarc Partners,7.9,11,100,Rural Hills,Forested edges,1200,Clay Loam,750,0,0,0,0,1600,340,1,2,100,15,Clearing +10%
+31,Bauchi East Links,Bauchi,North East,2025,6,35,Local,10.3,10.4,80,Plateau Extension,Rocky durable stone,800,Rocky,950,0,0,0,0,1500,320,0.8,1,70,12,Stone base +12%
+32,Gombe Urban Rehab,Gombe,North East,2025,4,22,Urban Ltd,10.29,11.17,40,Urban Semi-Arid,Compact traffic,700,Clay Loam,600,0,0,0,0,1300,300,1,1,50,10,Urban premium
+33,Adamawa Border Roads,Adamawa,North East,2024,10,40,Border Firm,9,12.5,90,Mountain Border,Steep terracing,1000,Clay,850,0,0,0,0,1700,340,1.2,2,80,18,Terracing +15%
+34,Borno Reconstruction Roads,Borno,North East,2025,5,180,Reconstruction Co,11.84,13.15,250,Post-Conflict Arid,Debris clearance,300,Sand,340,1,1,1,0,1800,360,0.8,5,200,25,Debris +20%
+35,Yobe North Highways,Yobe,North East,2025,2,60,Hwy Ltd,12,11.8,120,Northern Dunes,Sand geotextile,280,Sand,330,0,1,0,0,1600,350,0.7,3,110,15,Sand stabilization
+36,Taraba Mambilla Links,Taraba,North East,2025,9,28,Mambilla Dev,7.5,11.2,70,Highland Plateau,Cool low erosion,1100,Loam,1400,0,0,0,0,1200,280,0.9,1,60,8,Standard highland
+37,Bauchi Rural Spurs,Bauchi,North East,2024,7,15,Rural Co,10.5,9.8,50,Rural Savanna,Fertile easy,650,Loam,700,0,0,0,0,1000,240,0.6,0,40,5,Easy rural
+38,Gombe–Dutse Road,Gombe,North East,2024,11,75,Dutse Firm,10.8,11,150,Transitional Plains,Moderate balanced,800,Clay Loam,650,0,1,0,0,1300,300,0.8,2,120,10,Standard
+39,Adamawa South Access,Adamawa,North East,2025,3,32,South Access,8.8,12.2,80,Southern Hills,Rainy drains +12%,1200,Clay,750,0,0,0,0,1500,320,1.4,1,90,16,Drains +12%
+40,Borno Maiduguri Spurs,Borno,North East,2025,1,120,Spur Ltd,11.84,13.15,200,Urban Arid,Expansion traffic +10%,350,Sandy,340,0,1,0,0,1400,310,1,4,160,14,Urban +10%
+41,Bida–Lapaya–Lambata Road,Niger,North Central,2025,3,39.49,rccg,9.08,6.01,60,Savanna,Flat guinea savanna,650,Loam,380,0,1,0,0,1200,280,0.8,1,70,6,Standard dualization
+42,Ilorin–Omu Aran–Egba Road (Phase 1),Kwara,North Central,2025,11,43,rccg,8.5,4.54,40,Savanna,Undulating farmlands,700,Clay Loam,350,0,0,0,0,1100,270,0.9,3,50,8,Phase 1 + culverts
+43,Ilogu Road,Kwara,North Central,2025,3,7.55,rccg,8.48,4.55,25,Forest-Savanna,Moderate slopes,800,Loam,400,0,0,0,0,1000,250,0.7,0,30,10,Link road
+44,Abuja–Lokoja–Benin Road (Dual),FCT,North Central,2024,2,305,julius berger,9.06,7.5,200,Highland,Rocky cuts major bridges,800,Rocky Loam,450,1,1,0,0,1700,360,1,4,200,20,High rock + bridges
+45,9th Mile–Oturkpo–Makurdi Road,Benue,North Central,2024,1,150,RCCG,6.44,7.5,150,Riverine Plateau,Fertile valleys,900,Clay Loam,400,1,1,0,0,1600,340,1.1,3,180,15,Concrete pavement
+46,Enugu–Abakaliki–Ogoja Highway (Section I),Kogi,North Central,2024,11,80,Infiouest Intl Ltd,6.44,7.5,100,Hilly Border,Laterite stable base,850,Laterite,500,0,1,0,0,1400,310,0.9,2,100,12,Standard section
+47,Okene–Ajaokuta–Itobe Road (Recon),Kogi,North Central,2024,11,100,CCECC Nigeria Ltd,7.55,6.23,80,Hilly,Rugged iron ore hills,900,Rocky,450,0,1,1,0,2000,400,1.2,3,100,22,Blasting + rigid pavement
+48,Lokoja–Shintaku–Dekina Road (Rehab),Kogi,North Central,2025,2,40,TEC Eng Nigeria Ltd,7.8,6.74,70,Riverine,Flood risk elevated,950,Silty Clay,380,0,0,1,0,1300,290,1.5,1,80,18,Flood-proof rehab
+49,Abuja–Lokoja Section 4A (RHS),Kogi,North Central,2024,7,25,Venus Constr Nigeria Ltd,7.8,6.74,30,Urban Plateau,Compact traffic,800,Clay Loam,400,0,1,0,0,1400,320,1,1,50,10,Urban section
+50,Culverts Flood-Prone (Abuja–Lokoja Sec 2),Kogi,North Central,2024,4,10,Sadogi Nigeria Ltd,8.5,7.2,15,Flood Zone,Clay heavy drains +25%,1000,Silty Clay,380,0,0,0,0,1200,280,2,0,120,28,Extreme drainage
+51,Bode Saadu–Kaima–Kosubosu Road,Kwara,North Central,2024,3,130,BUA Group,9,4.5,130,Savanna,Deep fills 8m,700,Clay Loam,350,0,1,0,0,1800,380,1.1,3,140,18,Deep embankment +15%
+52,Niger Rural Networks,Niger,North Central,2025,6,35,Rural Net,9.5,5.5,90,Savanna Bush,Low density gravel,650,Loam,380,0,0,0,0,1000,240,0.6,0,70,5,Gravel rural
+53,Plateau Urban Roads,Plateau,North Central,2024,10,45,Urban Plateau,9.93,8.89,60,High Plateau,Cool rocky durable,1100,Rocky Loam,1300,0,0,0,0,1300,300,0.9,1,60,10,Stone base
+54,Benue East Highways,Benue,North Central,2025,5,120,Hwy Benue,7.5,8.5,150,River Valleys,Alluvial drains +12%,950,Silt,350,1,1,0,0,1600,340,1.4,4,180,16,Valleys + drains
+55,FCT Outer Links,FCT,North Central,2025,2,80,FCT Dev,9.06,7.4,100,Urban Expansion,Varied multi-use,800,Clay Loam,400,0,1,0,0,1500,330,1,2,120,12,Urban features
+56,Nasarawa Border Access,Nasarawa,North Central,2025,9,28,Border Nas,8.5,8,70,Forest Edge,Hilly terracing,1000,Clay,550,0,0,0,0,1600,340,1.1,1,80,14,Terracing +10%
+57,Kwara West Spurs,Kwara,North Central,2024,7,22,Spur Kwara,8.5,4.5,50,Western Plains,Flat easy,700,Loam,340,0,0,0,0,950,230,0.6,0,40,5,Easy gravel
+58,Kogi Central Roads,Kogi,North Central,2024,11,65,Central Kogi,7.5,6.5,130,Central Ridges,Moderate balanced,850,Clay Loam,450,0,1,0,0,1400,310,0.9,2,130,12,Standard ridges
+59,Niger Flood Rehab,Niger,North Central,2025,3,18,Flood Rehab,9.08,6.01,60,Floodplains,Silty culverts +20%,750,Silt,380,0,0,1,0,1100,260,1.6,0,110,22,Flood rehab
+60,Plateau South Links,Plateau,North Central,2025,1,90,South Plateau,9.5,8.5,180,Southern Slopes,Rainy erosion control,1200,Clay Loam,1100,0,1,0,0,1700,360,1.3,3,160,18,Slopes +10%
+61,Lagos–Ibadan Expressway Phase II,Lagos,South West,2025,11,43,BEETEE,6.58,3.38,50,Urban Coastal,High traffic dense urban,1800,Clay,15,0,1,0,0,2000,450,1.5,1,80,25,Urban premium +25%
+62,Mushin–Apapa–Oshodi Expressway,Lagos,South West,2025,11,19,BEETEE,6.52,3.35,20,Urban Coastal,Dense urban congestion,1800,Clay,10,0,0,0,0,2200,480,1.8,0,60,30,High traffic +30%
+63,Sokoto–Badagry Superhighway (SW Section),Ogun,South West,2025,11,551.5,julius berger,6.58,3.38,300,Flat Grassland,Urban service roads,1600,Clay Loam,50,1,1,0,0,1800,380,1.2,6,250,20,Multi-lane super
+64,Enyi Ilawe Ekiti Road,Ekiti,South West,2025,3,15.62,julius berger,7.62,5.22,40,Hilly Forest,Laterite slopes +10%,2000,Clay Loam,400,0,0,0,0,1600,340,1,1,50,15,Slopes +10%
+65,Kamakish Road,Oyo,South West,2025,3,12.35,BEETEE,7.38,3.92,30,Rural Farmland,Loamy easy paving,1400,Loam,280,0,0,0,0,1000,240,0.7,0,30,5,Easy rural
+66,Ota–Idi-Iroko Road,Ogun,South West,2025,11,52,RCCG,6.68,3.21,60,Border Plains,Customs fencing,1600,Clay Loam,60,0,0,0,0,1300,300,0.9,1,70,12,Border features
+67,Ijebu–Ibu Ete–Egba–Owena Road,Ogun,South West,2025,11,53,julius berger,6.82,3.92,70,Coastal Scrub,Flood-resilient +15%,2200,Silty Clay,40,0,0,1,0,1700,360,1.4,2,90,20,Flood design
+68,Oyo–Ogbomosho Road,Oyo,South West,2025,2,147.89,JRB Construction,7.38,3.92,100,Savanna,Flat savanna farmland,1400,Loam,280,0,1,0,0,1300,310,0.9,2,100,10,Standard dual
+69,Lagos–Calabar Coastal Highway (Phase 1),Lagos,South West,2024,3,1300,julius berger,6.58,3.38,200,Coastal Swamp,Elevated mangroves flooding,2500,Silty Clay,5,1,1,0,1,2500,500,2,12,300,40,Extreme swamp +40%
+70,Benin–Shagamu–Ore Road (96km),Ogun,South West,2025,5,187,julius berger,6.33,5.63,96,Forest Road,Undulating accelerated,1800,Clay Loam,100,0,1,0,0,1600,340,1.1,3,120,15,Accelerated completion
+71,Ibadan–Ilorin Road Section Two,Oyo,South West,2025,3,147,julius berger,7.38,3.92,100,Savanna Dual,High volume traffic,1500,Loam,300,0,1,0,0,1400,320,1,2,110,12,High traffic
+72,Lagos Urban Expansion,Lagos,South West,2025,6,250,Urban Lagos,6.52,3.35,150,Mega-Urban,Reclaimed high drains +25%,1900,Clay,8,0,1,0,0,2300,490,1.8,4,200,30,Reclaimed land
+73,Ogun Border Highways,Ogun,South West,2024,10,120,Border Ogun,6.68,3.21,200,Border Forest,Moderate customs,1700,Clay Loam,70,0,1,0,0,1500,330,1,3,160,14,Border features
+74,Ondo Coastal Links,Ondo,South West,2025,5,80,Coastal Ondo,6.8,4.5,120,Coastal Dunes,Sandy stabilization,2200,Sand,20,0,0,0,1,1800,360,1.2,2,130,18,Dunes +10%
+75,Osun Rural Rehab,Osun,South West,2025,2,35,Rural Osun,7.8,4.5,70,Rural Hills,Rainy erosion,2100,Clay,350,0,0,1,0,1400,310,1.3,1,80,20,Erosion control
+76,Ekiti Central Roads,Ekiti,South West,2025,9,45,HiTech Construction,7.62,5.22,90,Central Highlands,Rocky stone base,2000,Rocky Loam,500,0,0,0,0,1600,340,1,2,90,12,Highlands
+77,Oyo South Spurs,Oyo,South West,2024,7,28,HiTech Construction,7.2,3.8,60,Southern Farms,Flat gravel,1400,Loam,260,0,0,0,0,950,230,0.6,0,50,5,Easy gravel
+78,Lagos East Express,Lagos,South West,2024,11,180,HiTech Construction,6.5,3.4,120,Eastern Urban,Dense multi-modal,1850,Clay,12,0,1,0,0,2100,460,1.6,3,180,28,Urban express
+79,Ogun West Access,Ogun,South West,2025,3,55,West Ogun,6.7,3.1,100,Western Plains,Easy access,1600,Loam,60,0,0,0,0,1200,280,0.8,1,80,8,Easy plains
+80,Ondo North Links,Ondo,South West,2025,1,95,HiTech Construction,7,5,160,Northern Forest,Sloped terracing +12%,1900,Clay Loam,400,0,1,0,0,1700,360,1.2,4,150,20,Terracing +12%
+81,Uturu–Isuikwuato–Akara Road,Abia,South East,2025,3,5.92,HiTech Construction,5.22,7.64,30,Rainforest,Hilly erosive high drainage,2800,Clay,380,0,0,0,0,2200,400,1.8,1,70,28,Rainforest erosion +28%
+82,Obanewi Arisizogu–Okiwe Road,Imo,South East,2025,3,8.45,HiTech Construction,5.8,7,35,Dense Forest,Clay soils clearing,2700,Clay,350,0,0,0,0,2100,390,1.6,1,60,25,Clearing +20%
+83,Aba–Ikot Ekpene Road,Abia,South East,2025,3,30,CGC Nigeria Ltd,5.11,7.37,50,Urban-Rural Mix,Rainy bridges,2600,Clay Loam,100,1,0,0,0,1800,360,1.4,2,80,22,Inter-state bridges
+84,Benin–Akure–Ilesha Road Sec 2,Osun,South East,2024,7,56,HiTech Construction,6.33,5.63,80,Forest Transition,Undulating +15%,2200,Clay Loam,300,0,0,0,0,1600,340,1.2,2,90,18,Forest upgrade
+85,Old Enugu–Onitsha Road,Enugu,South East,2025,11,100,HiTech Construction,6.44,7.5,107,Savanna-Forest,High traffic dual,2200,Clay Loam,120,0,1,0,0,1700,350,1.1,3,120,15,Design adjustment
+86,Abakaliki–Afikpo Flyover,Ebonyi,South East,2025,11,20,HiTech Construction,6.32,8.12,5,Hilly Urban,Rocky flyover,2400,Rocky Clay,400,1,0,0,0,2500,500,1.5,1,30,30,Flyover
+87,Enugu–Onitsha Road Completion,Anambra,South East,2024,7,202,MTN Tax Credit,6.44,7.5,107,Expressway Plains,Dense full dual,2200,Clay Loam,120,1,1,0,0,1900,420,1.2,3,150,22,Tax credit funded
+88,Abakpa Flyover Enugu,Enugu,South East,2025,3,24,CCECC,6.45,7.5,3,Urban Junction,Compact quick,2300,Clay,150,1,0,0,0,2400,480,1.4,1,20,28,Flyover
+89,9th Mile–Oturkpo SE Section,Enugu,South East,2024,1,150,CCECC,6.44,7.5,150,Eastern Hills,Rainy concrete +20%,2500,Clay,300,1,1,0,0,2000,430,1.5,4,180,25,Concrete pavement
+90,Oseakwa Bridge,Anambra,South East,2024,2,15,CCECC,6.1,6.8,2,River Crossing,Soft banks piling,2600,Silty Clay,80,1,0,0,0,2800,520,1.8,1,15,35,Piling bridge
+91,Enugu–Port Harcourt (SE Part),Enugu,South East,2025,3,56,Arab Contractors,6.44,7.5,56,Rainforest,High rainfall erosion,2800,Clay,200,0,1,1,0,2100,430,1.6,2,90,25,Rehab in rainforest
+92,East–West Road Phase 1,Bayelsa,South South,2025,11,156,Arab Contractors,4.95,6.74,150,Delta Swamp,Deep mangrove piling,3000,Silt/Clay,3,1,1,0,1,3000,550,2.5,15,400,45,Swamp bridge-heavy +45%
+93,Benin–Asaba Superhighway,Edo,South South,2025,3,60,Africa Plus Partners,6.33,5.63,50,Niger Delta Plains,Riverine solar lights,2800,Clay,20,0,1,0,0,2200,460,1.8,2,100,30,Niger access
+94,Second Niger Bridge Access Road,Delta,South South,2025,3,20,Africa Plus Partners,6.2,6.73,20,Bridge Approach,Flood link phases,2900,Silty Clay,10,1,0,0,0,2600,500,2,2,80,35,Bridge link
+95,Sokoto–Badagry Highway (SS Link),Delta,South South,2024,10,428.3,Africa Plus Partners,13.06,5.24,258,Delta Fringe,Wet carriageway,2800,Clay,15,0,1,0,0,2400,480,1.9,5,200,32,Delta addition
+96,Odukpani–Itu–Idedem Road,Cross River,South South,2025,3,55,Decon Constr Nigeria Ltd,5,8,100,Coastal Swamp,Elevated dual,2800,Clay Loam,50,1,1,0,1,2400,480,1.9,4,160,32,Coastal swamp premium
+97,Aba–Ikot Ekpene SS Section,Akwa Ibom,South South,2025,3,30,CGC Nigeria Ltd,5.11,7.37,50,Oil-Rich Delta,Pipelines phase,2900,Clay,40,0,0,0,0,2000,420,1.6,2,90,28,Oil integration
+98,Benin–Akure–Ilesha SS Part,Edo,South South,2024,7,56,HiTech Construction,6.33,5.63,80,Forest Delta,Undulating section,2600,Clay Loam,100,0,0,0,0,1800,360,1.4,2,100,20,Forest section
+99,Isoko Ring Road,Delta,South South,2023,1,2.12,Levant Constr Ltd,5.45,6,20,Ring Swamp,Circular local,3000,Silty Clay,5,0,0,0,1,2500,500,2,1,60,40,Ring swamp
+100,Bonny Road Expansion,Rivers,South South,2024,6,15,Levant Constr Ltd,4.45,7.17,10,Island Swamp,Bridge-linked island,3200,Clay,2,1,0,0,1,2800,480,2.2,3,50,38,Full detailed BOQ available
+101,Lagos–Calabar Coastal SS Section,Cross River,South South,2024,3,1300,Levant Constr Ltd,6.58,3.38,300,Full Coastal Swamp,Elevated flooding +35%,3100,Silty Clay,5,1,1,0,1,3200,580,2.8,18,450,50,Extreme coastal
+102,Bodo–Bonny Road & Bridges,Rivers,South South,2024,9,280,Julius Berger,4.5,7.2,34,Coastal Swamp,13 major bridges LNG,3100,Silty Clay,4,1,1,0,1,3500,600,2.8,13,180,50,Extreme bridge cost
+103,Delta Rural Networks,Delta,South South,2025,6,45,Rural Delta,5.5,6,90,Rural Delta,Creeks networks +20%,3000,Clay,8,0,0,0,1,2600,500,2.1,3,,,

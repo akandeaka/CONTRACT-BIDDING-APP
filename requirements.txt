@@ -5,3 +5,4 @@ pandas
 joblib
 numpy
 openpyxl
+scikit-learn
