@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Contracts</title>
+</head>
+<body>
+  <h1>Contracts</h1>
+  <ul>
+    {% for c in contracts %}
+      <li>
+        <strong>{{ c.get('title', 'Untitled') }}</strong>
+        - ID: {{ loop.index0 }}
+        - Project ID: {{ c.get('project_id','-') }}
+        - <a href="/contracts/{{ loop.index0 }}">Details</a>
+      </li>
+    {% endfor %}
+  </ul>
+  <p>Note: If you expect different contract IDs, use the index number shown above or set <code>project_id</code> in your CSV.</p>
+</body>
+</html>

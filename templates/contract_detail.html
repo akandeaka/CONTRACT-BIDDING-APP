@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Contract Detail</title>
+</head>
+<body>
+  <h1>{{ contract.get('title', 'Contract Detail') }}</h1>
+  <table>
+    {% for k, v in contract.items() %}
+      <tr><th>{{ k }}</th><td>{{ v }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Submit Bid</h2>
+  <form action="/contracts/{{ contract.get('project_id') or request.path.split('/')[-1] }}/submit_bid" method="post">
+    <label for="email">Email</label><br>
+    <input name="email" type="email" required><br>
+    <label for="phone">Phone</label><br>
+    <input name="phone" type="text" required><br>
+    <label for="bid_amount">Bid Amount (numeric)</label><br>
+    <input name="bid_amount" type="number" step="0.01" required><br>
+    <label for="equipment_list">Equipment List</label><br>
+    <textarea name="equipment_list"></textarea><br>
+    <label for="workforce">Workforce</label><br>
+    <textarea name="workforce"></textarea><br>
+    <button type="submit">Submit Bid</button>
+  </form>
+
+  <p><a href="/contracts">Back to contracts list</a></p>
+</body>
+</html>
