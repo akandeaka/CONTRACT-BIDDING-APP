@@ -6,3 +6,10 @@ joblib
 numpy
 openpyxl
 scikit-learn
+fastapi
+uvicorn
+pandas
+scikit-learn
+joblib
+python-multipart
+Jinja2
