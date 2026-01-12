@@ -109,10 +109,26 @@ if model is None:
     print(f"Info: model.pkl not found or failed to load. Using DummyModel with fallback {fallback_val}")
     model = DummyModel(fallback_value=fallback_val)
 
+# ---------- SQLite (bids) ----------
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute(
     """
+    CREATE TABLE IF NOT EXISTS bids (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contract_id INTEGER,
+        email TEXT,
+        phone TEXT,
+        bid_amount REAL,
+        equipment_list TEXT,
+        workforce TEXT,
+        status TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """
+)
+conn.commit()
+
 # ---------- Utility ----------
 FEATURE_COLUMNS = [
     "award_year","award_month","primary_state","geopolitical_zone",
