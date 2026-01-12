@@ -112,3 +112,5 @@ if __name__ == '__main__':
     parser.add_argument("--test-size", type=float, default=0.2)
     args = parser.parse_args()
     main(args)
+  if not os.path.exists("model.pkl"):
+    subprocess.run(["python", "train_model.py"])
