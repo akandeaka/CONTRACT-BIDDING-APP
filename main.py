@@ -12,6 +12,7 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # ---------- Configuration ----------
+df= pd.read_csv("https://docs.google.com/spreadsheets/d/.../pub?out=csv")
 CONTRACTS_PATHS = [
     os.environ.get("CONTRACTS_PATH", ""),  # optional env override
     "contracts.csv",
