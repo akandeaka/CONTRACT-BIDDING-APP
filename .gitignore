@@ -1,4 +1,7 @@
+model.pkl
+contact.csv.xlsx
 __pycache__/
+^.db
 *.py[cod]
 .env
 .DS_Store
