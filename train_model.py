@@ -1,6 +1,4 @@
-
-
-### ✅ `train_model.py` (Cloud-Safe Version)
+### ✅ **Fixed `train_model.py` (Python 3.6+ Compatible)**
 ```python
 import pandas as pd
 import joblib
@@ -10,7 +8,6 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-# Google Sheets CSV URL (same as in main.py)
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 
 print("Starting model training...")
@@ -45,7 +42,3 @@ pipeline = Pipeline([
 pipeline.fit(X, y)
 joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
-```
-
----
-
