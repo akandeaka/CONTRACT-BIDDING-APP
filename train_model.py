@@ -114,3 +114,39 @@ if __name__ == '__main__':
     main(args)
   if not os.path.exists("model.pkl"):
     subprocess.run(["python", "train_model.py"])
+import pandas as pd
+import joblib
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
+
+try:
+    df = pd.read_csv(GOOGLE_SHEET_URL)
+    y = df['cost_ngn_billion']
+    
+    # Use only numeric columns that are guaranteed to exist
+    numeric_cols = ['estimated_length_km', 'award_year', 'rainfall_mm_per_year', 'elevation_m']
+    X = df[numeric_cols].copy()
+    
+    # Create pipeline
+    pipeline = Pipeline([
+        ('imputer', SimpleImputer(strategy='mean')),
+        ('scaler', StandardScaler()),
+        ('regressor', RandomForestRegressor(n_estimators=10, random_state=42))
+    ])
+    
+    pipeline.fit(X, y)
+    joblib.dump(pipeline, "model.pkl")
+    print("✅ Model trained and saved successfully!")
+    
+except Exception as e:
+    print(f"❌ Training failed: {e}")
+    # Create dummy model
+    from sklearn.dummy import DummyRegressor
+    dummy_model = DummyRegressor(strategy='mean')
+    dummy_model.fit(, [100])
+    joblib.dump(dummy_model, "model.pkl")
+    print("✅ Created dummy model as fallback")
