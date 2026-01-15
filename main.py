@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
+
+```python
+from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 import pandas as pd
@@ -12,28 +14,21 @@ import sys
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# --- DATA & MODEL LOADING ---
-DATA_PATH = "contracts.csv"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 MODEL_PATH = "model.pkl"
 
-def ensure_data_and_model():
-    """Ensure dataset and model exist; regenerate if missing."""
-    if not os.path.exists(DATA_PATH):
-        # Optional: fetch from Google Sheets URL instead
-        raise FileNotFoundError(f"Data file {DATA_PATH} not found. Please provide it or load from URL.")
-
+def ensure_model_exists():
     if not os.path.exists(MODEL_PATH):
-        print("Model not found. Training now...")
+        print("Training model...")
         result = subprocess.run([sys.executable, "train_model.py"], capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"Model training failed:\n{result.stderr}")
 
-ensure_data_and_model()
+ensure_model_exists()
 
-df = pd.read_csv(DATA_PATH).reset_index(drop=True)
+df = pd.read_csv(GOOGLE_SHEET_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
-# --- DATABASE SETUP ---
 conn = sqlite3.connect("bids.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -62,18 +57,9 @@ CREATE TABLE IF NOT EXISTS bids (
 """)
 conn.commit()
 
-# --- HELPER FUNCTIONS ---
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
 
-async def get_current_user_id(user_id: int = Form(...)) -> int:
-    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user ID")
-    return user[0]
-
-# --- ENDPOINTS ---
 @app.post("/register", response_class=HTMLResponse)
 async def register_user(email: str = Form(...), password: str = Form(...)):
     hashed = hashlib.sha256(password.encode()).hexdigest()
@@ -106,7 +92,7 @@ def contract_detail(request: Request, contract_id: int):
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
     contract_id: int,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Form(...),
     email: str = Form(...),
     phone: str = Form(...),
     bid_amount: float = Form(...),
@@ -140,3 +126,7 @@ async def submit_bid(
     conn.commit()
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p><p>Explanation: {explanation}</p>"
+```
+
+---
+
