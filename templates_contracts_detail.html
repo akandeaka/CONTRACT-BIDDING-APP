@@ -1,16 +1,41 @@
-<h2>{{ contract.project_name }}</h2>
-<p>Location: {{ contract.primary_state }} ({{ contract.geopolitical_zone }})</p>
-<p>Length: {{ contract.estimated_length_km }} km</p>
-<p>Terrain: {{ contract.terrain_type }}</p>
-<p>Rainfall: {{ contract.rainfall_mm_per_year }} mm/year</p>
-<p>Soil: {{ contract.soil_type }}</p>
+<!DOCTYPE html>
+<html>
+<head><title>Contracts</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-8">
+<h1 class="text-3xl font-bold mb-6">Available Contracts</h1>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+{% for contract in contracts %}
+<div class="bg-white p-6 rounded shadow">
+<h2 class="text-xl font-semibold">{{ contract.project_name }}</h2>
+<p class="text-gray-600">₦{{ contract.cost_ngn_billion }}B • {{ contract.primary_state }}</p>
+<a href="/contracts/{{ loop.index0 }}" class="mt-4 inline-block bg-blue-600 text-white px-4 py-2 rounded">View Details</a>
+</div>
+{% endfor %}
+</div>
+</body>
+</html>
 
-<h3>Submit a Bid</h3>
-<form action="/contracts/{{ index }}/submit_bid" method="post">
-  Email: <input type="email" name="email" required><br>
-  Phone: <input type="text" name="phone" required><br>
-  Bid Amount: <input type="number" step="0.01" name="bid_amount" required><br>
-  Equipment List: <input type="text" name="equipment_list"><br>
-  Workforce: <input type="text" name="workforce"><br>
-  <input type="submit" value="Submit Bid">
+<!DOCTYPE html>
+<html>
+<head><title>{{ contract.project_name }}</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-8">
+<a href="/contracts" class="text-blue-600">&larr; Back</a>
+<h1 class="text-3xl font-bold mt-4">{{ contract.project_name }}</h1>
+<form method="POST" action="/contracts/{{ contract.project_id }}/submit_bid" class="mt-6 bg-white p-6 rounded shadow">
+<input type="hidden" name="user_id" value="1" />
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+<input type="email" name="email" placeholder="Email" required class="px-4 py-2 border rounded">
+<input type="tel" name="phone" placeholder="Phone" required class="px-4 py-2 border rounded">
+</div>
+<input type="number" step="0.01" name="bid_amount" placeholder="Bid Amount (₦ Billion)" required class="w-full px-4 py-2 mb-4 border rounded">
+<textarea name="equipment_list" placeholder="Equipment List" required class="w-full px-4 py-2 mb-4 border rounded h-24"></textarea>
+<textarea name="workforce" placeholder="Workforce Details" required class="w-full px-4 py-2 mb-4 border rounded h-24"></textarea>
+<button type="submit" class="bg-green-600 text-white px-6 py-2 rounded">Submit Bid</button>
 </form>
+</body>
+</html>
+
