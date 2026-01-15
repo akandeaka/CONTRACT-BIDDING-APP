@@ -124,7 +124,7 @@ from sklearn.pipeline import Pipeline
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQT5-BoqR1dHJ4q0uTkm4W1GAN3lcINVNmCKA9XNIaIN-ns6_LSBEbkHHeBMkV7kQ/pub?output=csv"
 
 try:
-    df = pd.read_csv(GOOGLE_SHEET_URL)
+    df = pd.read_csv(https://docs.google.com/spreadsheets/d/e/2PACX-1vQT5-BoqR1dHJ4q0uTkm4W1GAN3lcINVNmCKA9XNIaIN-ns6_LSBEbkHHeBMkV7kQ/pub?output=csv)
     y = df['cost_ngn_billion']
     
     # Use only numeric columns that are guaranteed to exist
