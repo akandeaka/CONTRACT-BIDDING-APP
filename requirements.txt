@@ -1,19 +1,4 @@
 fastapi
-uvicorn[standard]
-jinja2
-pandas
-joblib
-numpy
-openpyxl
-scikit-learn
-fastapi
-uvicorn
-pandas
-scikit-learn
-joblib
-python-multipart
-```txt
-fastapi
 uvicorn
 pandas
 scikit-learn
@@ -21,5 +6,4 @@ joblib
 Jinja2
 python-multipart
 requests
-```
 
