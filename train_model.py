@@ -121,7 +121,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQT5-BoqR1dHJ4q0uTkm4W1GAN3lcINVNmCKA9XNIaIN-ns6_LSBEbkHHeBMkV7kQ/pub?output=csv"
 
 try:
     df = pd.read_csv(GOOGLE_SHEET_URL)
