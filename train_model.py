@@ -1,4 +1,5 @@
-### ✅ **Fixed `train_model.py` (Python 3.6+ Compatible)**
+✅ `train_model.py` (Cloud-Safe)
+
 ```python
 import pandas as pd
 import joblib
@@ -42,3 +43,19 @@ pipeline = Pipeline([
 pipeline.fit(X, y)
 joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
+```
+
+---
+
+### ✅ `requirements.txt`
+```txt
+fastapi
+uvicorn
+pandas
+scikit-learn
+joblib
+Jinja2
+python-multipart
+requests
+```
+
