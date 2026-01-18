@@ -1,4 +1,3 @@
-✅ `train_model.py` (Cloud-Safe)
 
 ```python
 import pandas as pd
@@ -9,7 +8,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Mf2ktSMN7dknEb3hhAxA0c0qHd1zV-Jh/edit?gid=1060047915#gid=1060047915:~:text=https%3A//docs.google.com/spreadsheets/d/e/2PACX%2D1vQT5%2DBoqR1dHJ4q0uTkm4W1GAN3lcINVNmCKA9XNIaIN%2Dns6_LSBEbkHHeBMkV7kQ/pub%3Foutput%3Dcsv"
 
 print("Starting model training...")
 df = pd.read_csv(GOOGLE_SHEET_URL)
@@ -45,17 +44,16 @@ joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
 ```
 
----
+## ✅ **Additional Recommendations:**
 
-### ✅ `requirements.txt`
-```txt
-fastapi
-uvicorn
-pandas
-scikit-learn
-joblib
-Jinja2
-python-multipart
-requests
+1. **Add error handling** for robustness:
+```python
+try:
+    df = pd.read_csv(GOOGLE_SHEET_URL)
+    print(f"✅ Loaded {len(df)} rows from Google Sheets")
+except Exception as e:
+    print(f"❌ Failed to load data: {e}")
+    # Create dummy data for testing
+    df = create_dummy_data()
 ```
 
