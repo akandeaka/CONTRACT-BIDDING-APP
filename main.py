@@ -1,5 +1,4 @@
 
-```python
 from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -10,14 +9,11 @@ import os
 import hashlib
 import subprocess
 import sys
-
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
-
 # Google Sheets CSV URL (CORRECTED - no trailing spaces)
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 MODEL_PATH = "model.pkl"
-
 def ensure_model_exists():
     """Train model if missing"""
     if not os.path.exists(MODEL_PATH):
@@ -160,14 +156,11 @@ requests
 ### 3. **Render Deployment Settings:**
 - **Build Command**: `pip install -r requirements.txt`
 - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-
 ## 🧪 **Test Before Deploying:**
 Create a test script `test_main.py`:
 ```python
 import pandas as pd
-
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
-
 try:
     df = pd.read_csv(GOOGLE_SHEET_URL)
     print(f"✅ SUCCESS! Loaded {len(df)} rows")
