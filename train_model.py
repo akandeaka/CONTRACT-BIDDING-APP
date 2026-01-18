@@ -8,7 +8,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Mf2ktSMN7dknEb3hhAxA0c0qHd1zV-Jh/edit?gid=1060047915#gid=1060047915:~:text=https%3A//docs.google.com/spreadsheets/d/e/2PACX%2D1vQT5%2DBoqR1dHJ4q0uTkm4W1GAN3lcINVNmCKA9XNIaIN%2Dns6_LSBEbkHHeBMkV7kQ/pub%3Foutput%3Dcsv"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQT5-BoqR1dHJ4q0uTkm4W1GAN3lcINVNmCKA9XNIaIN-ns6_LSBEbkHHeBMkV7kQ/pub?output=csv"
 
 print("Starting model training...")
 df = pd.read_csv(GOOGLE_SHEET_URL)
@@ -55,5 +55,4 @@ except Exception as e:
     print(f"❌ Failed to load data: {e}")
     # Create dummy data for testing
     df = create_dummy_data()
-```
 
