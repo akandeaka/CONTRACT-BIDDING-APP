@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -11,7 +10,6 @@ import subprocess
 import sys
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
-# Google Sheets CSV URL (CORRECTED - no trailing spaces)
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 MODEL_PATH = "model.pkl"
 def ensure_model_exists():
@@ -19,16 +17,13 @@ def ensure_model_exists():
     if not os.path.exists(MODEL_PATH):
         print("Training model...")
         subprocess.run([sys.executable, "train_model.py"], check=True)
-
 # Initialize model and data
 ensure_model_exists()
 df = pd.read_csv(GOOGLE_SHEET_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
-
 # Database setup
 conn = sqlite3.connect("bids.db", check_same_thread=False)
 cursor = conn.cursor()
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,131 +120,19 @@ async def submit_bid(
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status_msg))
     conn.commit()
-
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
-```
-
-## 🔑 **Key Fixes Applied:**
-1. **✅ Removed trailing spaces** from the Google Sheets URL
-2. **✅ Added missing closing parenthesis** at the end of the file
-3. **✅ Verified all syntax is correct**
-
-## 🚀 **Additional Requirements for Success:**
-
-### 1. **Your Google Sheet must be published correctly:**
-- File → Share → Publish to web
-- Select "Comma-separated values (.csv)"
-- Copy the URL (should end with `/pub?output=csv`)
-
-### 2. **Your `requirements.txt` must include:**
-```txt
-fastapi
-uvicorn
-pandas
-scikit-learn
-joblib
-Jinja2
-python-multipart
-requests
-```
-
-### 3. **Render Deployment Settings:**
-- **Build Command**: `pip install -r requirements.txt`
-- **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-## 🧪 **Test Before Deploying:**
-Create a test script `test_main.py`:
-```python
-import pandas as pd
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
-try:
-    df = pd.read_csv(GOOGLE_SHEET_URL)
-    print(f"✅ SUCCESS! Loaded {len(df)} rows")
-except Exception as e:
-    print(f"❌ FAILED: {e}")
-```
-
-**With these fixes, your code will run successfully on Render!**"
-MODEL_PATH = "model.pkl"
-
-def ensure_model_exists():
-    """Train model if missing"""
-    if not os.path.exists(MODEL_PATH):
-        print("Training model...")
-        subprocess.run([sys.executable, "train_model.py"], check=True)
-
-# Initialize model and data
-ensure_model_exists()
-df = pd.read_csv(GOOGLE_SHEET_URL).reset_index(drop=True)
-model = joblib.load(MODEL_PATH)
-
-# Database setup
-conn = sqlite3.connect("bids.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS bids (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contract_id INTEGER,
-    user_id INTEGER NOT NULL,
-    email TEXT,
-    phone TEXT,
-    bid_amount REAL,
-    equipment_list TEXT,
-    workforce TEXT,
-    status TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-)
-""")
-conn.commit()
-
-def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
-    return base_price * ((1 + inflation_rate) ** years)
-
-async def get_current_user_id(user_id: int = Form(...)) -> int:
-    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid user ID")
-    return user[0]
-
-@app.post("/register", response_class=HTMLResponse)
-async def register_user(email: str = Form(...), password: str = Form(...)):
-    hashed = hashlib.sha256(password.encode()).hexdigest()
-    try:
-        cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (email, hashed))
-        conn.commit()
-        return "<h1>✅ Registration Successful!</h1><p><a href='/login'>Login here</a></p>"
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-@app.post("/login", response_class=HTMLResponse)
-async def login_user(email: str = Form(...), password: str = Form(...)):
-    hashed = hashlib.sha256(password.encode()).hexdigest()
-    cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
-    user = cursor.fetchone()
+``or.fetchone()
     if user:
         return f"<h1>✅ Login Successful!</h1><p>User ID: {user[0]}</p><p><a href='/contracts'>View Contracts</a></p>"
     else:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
     return templates.TemplateResponse("contracts.html", {"request": request, "contracts": df.to_dict(orient="records")})
-
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
     row = df.iloc[contract_id]
     return templates.TemplateResponse("contract_detail.html", {"request": request, "contract": row.to_dict()})
-
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
     contract_id: int,
@@ -274,15 +157,12 @@ async def submit_bid(
     base_price = model.predict(features_df)[0]
     adjusted = adjust_for_inflation(base_price)
     fair_min, fair_max = adjusted * 0.9, adjusted * 1.1
-
     status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
-
     cursor.execute("""
     INSERT INTO bids (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status_msg))
     conn.commit()
-
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
 ```
 
