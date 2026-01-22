@@ -6,10 +6,8 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-
 # Google Sheets CSV URL with .rstrip() for safety
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv".rstrip()
-
 print("Starting model training...")
 df = pd.read_csv(GOOGLE_SHEET_URL)
 y = df['contract_value_ngn_billion']  # ✅ Correct column name
@@ -44,3 +42,4 @@ joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
 
 ```
+
