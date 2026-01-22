@@ -11,7 +11,6 @@ from sklearn.pipeline import Pipeline
 
 # Google Sheets CSV URL (same as in main.py)
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
-
 print("Starting model training...")
 df = pd.read_csv(GOOGLE_SHEET_URL)
 y = df['cost_ngn_billion']
@@ -45,5 +44,6 @@ pipeline.fit(X, y)
 joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
 ```
+
 
 
