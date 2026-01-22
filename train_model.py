@@ -14,7 +14,7 @@ GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20un
 print(f"URL length: {len(GOOGLE_SHEET_URL)}")
 print(f"URL ends with 'csv': {GOOGLE_SHEET_URL.endswith('csv')}")
 
-df = pd.read_csv(GOOGLE_SHEET_URL)  # This should work now
+df = pd.read_csv(GOOGLE_SHEET_URL)
 
 print("Starting model training...")
 df = pd.read_csv(GOOGLE_SHEET_URL)
@@ -49,6 +49,7 @@ pipeline.fit(X, y)
 joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
 ```
+
 
 
 
