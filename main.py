@@ -14,7 +14,7 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # Google Sheets CSV URL (replace with your actual published URL)
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/YOUR_SHEET_ID/pub?output=csv"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 MODEL_PATH = "model.pkl"
 
 def ensure_model_and_data():
@@ -134,4 +134,5 @@ async def submit_bid(
 ```
 
 ---
+
 
