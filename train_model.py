@@ -1,5 +1,4 @@
-## train_model.py
-```python
+# train_model.py
 import pandas as pd
 import joblib
 from sklearn.ensemble import RandomForestRegressor
@@ -43,4 +42,5 @@ pipeline = Pipeline([
 pipeline.fit(X, y)
 joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
+
 ```
