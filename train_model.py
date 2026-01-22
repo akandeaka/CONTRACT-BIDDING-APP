@@ -1,6 +1,4 @@
 # train_model.py` (Cloud-Safe)
-
-```python
 import pandas as pd
 import joblib
 from sklearn.ensemble import RandomForestRegressor
@@ -49,6 +47,7 @@ pipeline.fit(X, y)
 joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
 ```
+
 
 
 
