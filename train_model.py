@@ -10,8 +10,7 @@ from sklearn.pipeline import Pipeline
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv".rstrip()
 print("Starting model training...")
 df = pd.read_csv(GOOGLE_SHEET_URL)
-y = df['contract_value_ngn_billion']  # ✅ Correct column name
-
+y = df['contract_value_ngn_billion']  
 feature_columns = [
     "award_year", "award_month", "primary_state", "geopolitical_zone",
     "latitude_start", "longitude_start", "estimated_length_km",
@@ -40,6 +39,3 @@ pipeline = Pipeline([
 pipeline.fit(X, y)
 joblib.dump(pipeline, "model.pkl")
 print("✅ Model trained and saved!")
-
-```
-
