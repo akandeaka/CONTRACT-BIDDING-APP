@@ -1,0 +1,57 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contract Details - AISEC</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #2563eb; margin-bottom: 20px; }
+        .detail-item { margin: 15px 0; }
+        .detail-label { font-weight: bold; color: #64748b; }
+        .detail-value { color: #0f172a; }
+        .back-link { display: inline-block; margin-top: 20px; color: #2563eb; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ contract.project_name }}</h1>
+        
+        <div class="detail-item">
+            <span class="detail-label">Budget:</span>
+            <span class="detail-value">₦{{ "%.2f"|format(contract.cost_ngn_billion) }} Billion</span>
+        </div>
+        
+        <div class="detail-item">
+            <span class="detail-label">Location:</span>
+            <span class="detail-value">{{ contract.primary_state }}</span>
+        </div>
+        
+        <div class="detail-item">
+            <span class="detail-label">Geopolitical Zone:</span>
+            <span class="detail-value">{{ contract.geopolitical_zone }}</span>
+        </div>
+        
+        <div class="detail-item">
+            <span class="detail-label">Estimated Length:</span>
+            <span class="detail-value">{{ contract.estimated_length_km }} km</span>
+        </div>
+        
+        <div class="detail-item">
+            <span class="detail-label">Terrain Type:</span>
+            <span class="detail-value">{{ contract.terrain_type }}</span>
+        </div>
+        
+        <div class="detail-item">
+            <span class="detail-label">Award Date:</span>
+            <span class="detail-value">{{ contract.award_month }}/{{ contract.award_year }}</span>
+        </div>
+        
+        <a href="/contracts" class="back-link">← Back to Contracts</a>
+    </div>
+</body>
+</html>
+```
