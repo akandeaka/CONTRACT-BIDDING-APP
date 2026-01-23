@@ -1,5 +1,4 @@
 # main.py
-```python
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -148,3 +147,4 @@ async def submit_bid(
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
 ```
+
