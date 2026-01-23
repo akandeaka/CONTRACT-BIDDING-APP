@@ -110,9 +110,11 @@ async def login_user(email: str = Form(...), password: str = Form(...)):
 def contracts(request: Request):
     # Return bidding contracts (without cost information)
     return templates.TemplateResponse("contracts_fragment.html", {"request": request, "contracts": df_bidding.to_dict(orient="records")})
-
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
+    row = df_bidding.iloc[contract_id]
+    return templates.TemplateResponse("contract_detail.html", {"request": request, "contract": row.to_dict()})
+```
     # Show detailed bidding contract info (without cost)
     row = df_bidding.iloc[contract_id]
     return templates.TemplateResponse("contract_detail.html", {"request": request, "contract": row.to_dict()})
