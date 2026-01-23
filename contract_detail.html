@@ -21,11 +21,6 @@
         <h1>{{ contract.project_name }}</h1>
         
         <div class="detail-item">
-            <span class="detail-label">Budget:</span>
-            <span class="detail-value">₦{{ "%.2f"|format(contract.cost_ngn_billion) }} Billion</span>
-        </div>
-        
-        <div class="detail-item">
             <span class="detail-label">Location:</span>
             <span class="detail-value">{{ contract.primary_state }}</span>
         </div>
@@ -37,7 +32,7 @@
         
         <div class="detail-item">
             <span class="detail-label">Estimated Length:</span>
-            <span class="detail-value">{{ contract.estimated_length_km }} km</span>
+            <span class="detail-value">{{ "%.2f"|format(contract.estimated_length_km) }} km</span>
         </div>
         
         <div class="detail-item">
@@ -46,8 +41,18 @@
         </div>
         
         <div class="detail-item">
-            <span class="detail-label">Award Date:</span>
+            <span class="detail-label">Award Period:</span>
             <span class="detail-value">{{ contract.award_month }}/{{ contract.award_year }}</span>
+        </div>
+        
+        <div class="detail-item">
+            <span class="detail-label">Has Bridge:</span>
+            <span class="detail-value">{{ "Yes" if contract.has_bridge else "No" }}</span>
+        </div>
+        
+        <div class="detail-item">
+            <span class="detail-label">Dual Carriageway:</span>
+            <span class="detail-value">{{ "Yes" if contract.is_dual_carriageway else "No" }}</span>
         </div>
         
         <a href="/contracts" class="back-link">← Back to Contracts</a>
