@@ -13,33 +13,38 @@ import sys
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# Add CORS middleware AFTER app initialization
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://akandeaka.github.io",      # ✅ NO trailing spaces
+        "https://akandeaka.github.io",
         "http://localhost:8000",
-        "https://aisec.netlify.app"         # ✅ NO trailing spaces
+        "https://aisec.netlify.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Google Sheets CSV URL (cleaned - no trailing spaces)
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"  # ✅ NO trailing spaces
+# URLs for both datasets (NO trailing spaces)
+TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
+BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
+
 MODEL_PATH = "model.pkl"
 
 def ensure_model_and_data():
-    """Train model and load data if not exists"""
+    """Train model using training data if not exists"""
     if not os.path.exists(MODEL_PATH):
         print("Training model...")
         subprocess.run([sys.executable, "train_model.py"], check=True)
 
 ensure_model_and_data()
 
-# Load data and model
-df = pd.read_csv(GOOGLE_SHEET_URL).reset_index(drop=True)
+# Load both datasets
+df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)  # For AI model
+df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)  # For frontend display
+
+# Load trained model (trained on df_training)
 model = joblib.load(MODEL_PATH)
 
 # Database setup
@@ -103,12 +108,13 @@ async def login_user(email: str = Form(...), password: str = Form(...)):
 
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
-    # Use contracts_fragment.html for frontend integration
-    return templates.TemplateResponse("contracts_fragment.html", {"request": request, "contracts": df.to_dict(orient="records")})
+    # Return bidding contracts (without cost information)
+    return templates.TemplateResponse("contracts_fragment.html", {"request": request, "contracts": df_bidding.to_dict(orient="records")})
 
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
-    row = df.iloc[contract_id]
+    # Show detailed bidding contract info (without cost)
+    row = df_bidding.iloc[contract_id]
     return templates.TemplateResponse("contract_detail.html", {"request": request, "contract": row.to_dict()})
 
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
@@ -121,17 +127,24 @@ async def submit_bid(
     equipment_list: str = Form(...),
     workforce: str = Form(...),
 ):
-    row = df.iloc[contract_id]
-    features = row[[
+    # Get the bidding contract features
+    bidding_contract = df_bidding.iloc[contract_id]
+    
+    # Use the same features that were used for training
+    feature_columns = [
         "award_year", "award_month", "primary_state", "geopolitical_zone",
         "latitude_start", "longitude_start", "estimated_length_km",
         "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
         "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
         "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
         "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
-    ]]
-
+    ]
+    
+    # Extract features from bidding contract
+    features = bidding_contract[feature_columns]
     features_df = pd.DataFrame([features.values], columns=features.index)
+    
+    # Predict fair price using model trained on historical data
     base_price = model.predict(features_df)[0]
     adjusted = adjust_for_inflation(base_price)
     fair_min, fair_max = adjusted * 0.9, adjusted * 1.1
@@ -145,3 +158,4 @@ async def submit_bid(
     conn.commit()
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
+```
