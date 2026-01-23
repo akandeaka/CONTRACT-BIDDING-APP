@@ -1,6 +1,19 @@
 from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://akandeaka.github.io",
+        "http://localhost:8000",  # For local testing
+        "https://aiseс.netlify.app"  # If you use Netlify later
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 import pandas as pd
 import sqlite3
 import joblib
@@ -130,3 +143,4 @@ async def submit_bid(
     conn.commit()
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
+
