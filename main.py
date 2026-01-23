@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -143,4 +142,3 @@ async def submit_bid(
     conn.commit()
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
-
