@@ -1,18 +1,9 @@
-from fastapi import FastAPI, Request, Form, HTTPException, status, Depends
+# main.py
+```python
+from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://akandeaka.github.io",
-        "http://localhost:8000",  # For local testing
-        "https://aiseс.netlify.app"  # If you use Netlify later
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 import pandas as pd
 import sqlite3
 import joblib
@@ -24,7 +15,20 @@ import sys
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# Google Sheets CSV URL (replace with your actual published URL)
+# Add CORS middleware AFTER app initialization
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://akandeaka.github.io",
+        "http://localhost:8000",
+        "https://aisec.netlify.app"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Google Sheets CSV URL (cleaned - no trailing spaces)
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 MODEL_PATH = "model.pkl"
 
@@ -101,7 +105,8 @@ async def login_user(email: str = Form(...), password: str = Form(...)):
 
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
-    return templates.TemplateResponse("contracts.html", {"request": request, "contracts": df.to_dict(orient="records")})
+    # Use contracts_fragment.html for frontend integration
+    return templates.TemplateResponse("contracts_fragment.html", {"request": request, "contracts": df.to_dict(orient="records")})
 
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
@@ -142,9 +147,4 @@ async def submit_bid(
     conn.commit()
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
-    ```python
-@app.get("/contracts", response_class=HTMLResponse)
-def contracts(request: Request):
-    return templates.TemplateResponse("contracts_fragment.html", {"request": request, "contracts": df.to_dict(orient="records")})
-
-
+```
