@@ -142,3 +142,9 @@ async def submit_bid(
     conn.commit()
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
+    ```python
+@app.get("/contracts", response_class=HTMLResponse)
+def contracts(request: Request):
+    return templates.TemplateResponse("contracts_fragment.html", {"request": request, "contracts": df.to_dict(orient="records")})
+
+
