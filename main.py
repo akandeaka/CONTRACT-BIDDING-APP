@@ -1,4 +1,3 @@
-```python
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -18,9 +17,9 @@ templates = Jinja2Templates(directory="templates")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://akandeaka.github.io",      # ✅ No trailing spaces
+        "https://akandeaka.github.io",      # ✅ NO trailing spaces
         "http://localhost:8000",
-        "https://aisec.netlify.app"         # ✅ No trailing spaces
+        "https://aisec.netlify.app"         # ✅ NO trailing spaces
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -28,7 +27,7 @@ app.add_middleware(
 )
 
 # Google Sheets CSV URL (cleaned - no trailing spaces)
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"  # ✅ No trailing spaces
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"  # ✅ NO trailing spaces
 MODEL_PATH = "model.pkl"
 
 def ensure_model_and_data():
@@ -146,5 +145,3 @@ async def submit_bid(
     conn.commit()
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
-```
-**With these fixes, your code will run successfully on Render!**
