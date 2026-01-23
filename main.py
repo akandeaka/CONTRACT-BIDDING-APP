@@ -38,7 +38,7 @@ def ensure_model_and_data():
         print("Training model...")
         subprocess.run([sys.executable, "train_model.py"], check=True)
 
-ensure_model_and_data()
+ensure_model_and_data()  # ← This line was missing proper closing
 
 # Load both datasets
 df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)  # For AI model
