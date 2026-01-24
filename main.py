@@ -158,4 +158,3 @@ async def submit_bid(
     conn.commit()
 
     return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
-```
