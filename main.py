@@ -79,18 +79,26 @@ df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
 # Database setup
+import os
+import sqlite3
+
+# Ensure database directory exists
+os.makedirs(os.path.dirname("bids.db"), exist_ok=True)
+
 conn = sqlite3.connect("bids.db", check_same_thread=False)
 cursor = conn.cursor()
 
+# Create users table with proper constraints
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
     hashed_password TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """)
 
+# Create bids table with proper foreign key
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS bids (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,11 +110,12 @@ CREATE TABLE IF NOT EXISTS bids (
     equipment_list TEXT,
     workforce TEXT,
     status TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 )
 """)
 conn.commit()
+
 
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
@@ -254,4 +263,5 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
 
