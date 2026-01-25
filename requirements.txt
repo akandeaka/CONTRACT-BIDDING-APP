@@ -7,3 +7,4 @@ Jinja2
 python-multipart
 python-jose[cryptography]
 passlib[bcrypt]
+requests
