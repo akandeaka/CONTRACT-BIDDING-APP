@@ -16,9 +16,35 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # JWT Configuration
-SECRET_KEY = "your-secret-key-change-this-in-production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+import secrets
+from datetime import datetime, timedelta
+
+# Simple session storage (in production, use Redis or database)
+sessions = {}
+
+def create_session_token(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    sessions[token] = {
+        "user_id": user_id,
+        "expires_at": datetime.utcnow() + timedelta(minutes=30)
+    }
+    return token
+
+def get_current_user(token: str = None):
+    if not token or token not in sessions:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    session = sessions[token]
+    if datetime.utcnow() > session["expires_at"]:
+        del sessions[token]
+        raise HTTPException(status_code=401, detail="Session expired")
+    
+    cursor.execute("SELECT id, email FROM users WHERE id = ?", (session["user_id"],))
+    user = cursor.fetchone()
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+    return {"id": user[0], "email": user[1]}
+
 
 # Add CORS middleware
 app.add_middleware(
@@ -228,3 +254,4 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
