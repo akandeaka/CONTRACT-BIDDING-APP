@@ -1,7 +1,9 @@
-from fastapi import FastAPI, Request, Form, HTTPException, Depends
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, Form, HTTPException, Depends, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
 import pandas as pd
 import sqlite3
 import joblib
@@ -13,7 +15,12 @@ import sys
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# Add CORS middleware (NO trailing spaces)
+# JWT Configuration
+SECRET_KEY = "your-secret-key-change-this-in-production"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -38,13 +45,11 @@ def ensure_model_and_data():
         print("Training model...")
         subprocess.run([sys.executable, "train_model.py"], check=True)
 
-ensure_model_and_data()  # ← This line was missing proper closing
+ensure_model_and_data()
 
 # Load both datasets
-df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)  # For AI model
-df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)  # For frontend display
-
-# Load trained model (trained on df_training)
+df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)
+df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
 # Database setup
@@ -55,7 +60,8 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL
+    hashed_password TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 """)
 
@@ -79,12 +85,34 @@ conn.commit()
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
 
-async def get_current_user_id(user_id: int = Form(...)) -> int:
-    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid user ID")
-    return user[0]
+def create_access_token( dict):
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = {"exp": expire, **data}
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_current_user(token: str = None):
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        cursor.execute("SELECT id, email FROM users WHERE id = ?", (user_id,))
+        user = cursor.fetchone()
+        if user is None:
+            raise HTTPException(status_code=401, detail="User not found")
+        return {"id": user[0], "email": user[1]}
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return RedirectResponse(url="/contracts")
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
 
 @app.post("/register", response_class=HTMLResponse)
 async def register_user(email: str = Form(...), password: str = Form(...)):
@@ -92,9 +120,20 @@ async def register_user(email: str = Form(...), password: str = Form(...)):
     try:
         cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (email, hashed))
         conn.commit()
-        return "<h1>✅ Registration Successful!</h1><p><a href='/login'>Login here</a></p>"
+        user_id = cursor.lastrowid
+        access_token = create_access_token({"sub": user_id})
+        response = RedirectResponse(url="/contracts", status_code=303)
+        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=1800)
+        return response
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        return templates.TemplateResponse("register.html", {
+            "request": request, 
+            "error": "Email already registered"
+        })
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login", response_class=HTMLResponse)
 async def login_user(email: str = Form(...), password: str = Form(...)):
@@ -102,59 +141,90 @@ async def login_user(email: str = Form(...), password: str = Form(...)):
     cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
     user = cursor.fetchone()
     if user:
-        return f"<h1>✅ Login Successful!</h1><p>User ID: {user[0]}</p><p><a href='/contracts'>View Contracts</a></p>"
+        access_token = create_access_token({"sub": user[0]})
+        response = RedirectResponse(url="/contracts", status_code=303)
+        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=1800)
+        return response
     else:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        return templates.TemplateResponse("login.html", {
+            "request": request, 
+            "error": "Invalid credentials"
+        })
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("access_token")
+    return response
 
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
-    # Return bidding contracts (without cost information)
-    return templates.TemplateResponse("contracts_fragment.html", {"request": request, "contracts": df_bidding.to_dict(orient="records")})
+    # Check if user is authenticated
+    token = request.cookies.get("access_token")
+    try:
+        user = get_current_user(token)
+        return templates.TemplateResponse("contracts_fragment.html", {
+            "request": request, 
+            "contracts": df_bidding.to_dict(orient="records"),
+            "user_id": user["id"]
+        })
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
 
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
-    # Show detailed bidding contract info (without cost)
-    row = df_bidding.iloc[contract_id]
-    return templates.TemplateResponse("contract_detail.html", {"request": request, "contract": row.to_dict()})
+    token = request.cookies.get("access_token")
+    try:
+        user = get_current_user(token)
+        row = df_bidding.iloc[contract_id]
+        return templates.TemplateResponse("contract_detail.html", {
+            "request": request, 
+            "contract": row.to_dict(),
+            "user_id": user["id"]
+        })
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
 
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
+    request: Request,
     contract_id: int,
-    user_id: int = Depends(get_current_user_id),
     email: str = Form(...),
     phone: str = Form(...),
     bid_amount: float = Form(...),
     equipment_list: str = Form(...),
     workforce: str = Form(...),
 ):
-    # Get the bidding contract features
-    bidding_contract = df_bidding.iloc[contract_id]
-    
-    # Use the same features that were used for training
-    feature_columns = [
-        "award_year", "award_month", "primary_state", "geopolitical_zone",
-        "latitude_start", "longitude_start", "estimated_length_km",
-        "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
-        "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
-        "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
-        "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
-    ]
-    
-    # Extract features from bidding contract
-    features = bidding_contract[feature_columns]
-    features_df = pd.DataFrame([features.values], columns=features.index)
-    
-    # Predict fair price using model trained on historical data
-    base_price = model.predict(features_df)[0]
-    adjusted = adjust_for_inflation(base_price)
-    fair_min, fair_max = adjusted * 0.9, adjusted * 1.1
+    token = request.cookies.get("access_token")
+    try:
+        user = get_current_user(token)
+        user_id = user["id"]
+        
+        bidding_contract = df_bidding.iloc[contract_id]
+        feature_columns = [
+            "award_year", "award_month", "primary_state", "geopolitical_zone",
+            "latitude_start", "longitude_start", "estimated_length_km",
+            "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
+            "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
+            "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
+            "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
+        ]
+        
+        features = bidding_contract[feature_columns]
+        features_df = pd.DataFrame([features.values], columns=features.index)
+        base_price = model.predict(features_df)[0]
+        adjusted = adjust_for_inflation(base_price)
+        fair_min, fair_max = adjusted * 0.9, adjusted * 1.1
 
-    status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
+        status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
 
-    cursor.execute("""
-    INSERT INTO bids (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status_msg))
-    conn.commit()
+        cursor.execute("""
+        INSERT INTO bids (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status_msg))
+        conn.commit()
 
-    return f"<h2>Bid Result</h2><p>Status: {status_msg}</p>"
+        return f"<h2>Bid Result</h2><p>Status: {status_msg}</p><br><a href='/contracts' class='btn btn-primary'>Back to Contracts</a>"
+        
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
