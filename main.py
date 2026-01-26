@@ -174,40 +174,46 @@ async def register_page(request: Request):
 
 @app.post("/register", response_class=HTMLResponse)
 async def register_user(email: str = Form(...), password: str = Form(...)):
-    hashed = hashlib.sha256(password.encode()).hexdigest()
+    if not email or "@" not in email:
+        return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
+    
+    if len(password) < 6:
+        return "<h2 style='color:red;'>❌ Password too short (min 6 characters)</h2><p><a href='/register'>Go back</a></p>"
+    
     try:
+        hashed = hashlib.sha256(password.encode()).hexdigest()
         cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (email, hashed))
         conn.commit()
-        user_id = cursor.lastrowid
-        access_token = create_access_token({"sub": user_id})
-        response = RedirectResponse(url="/contracts", status_code=303)
-        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=1800)
-        return response
+        return "<h2 style='color:green;'>✅ Registration successful!</h2><p><a href='/login'>Login here</a></p>"
     except sqlite3.IntegrityError:
-        return templates.TemplateResponse("register.html", {
-            "request": request, 
-            "error": "Email already registered"
-        })
+        return "<h2 style='color:red;'>❌ Email already registered</h2><p><a href='/login'>Login here</a></p>"
+    except Exception as e:
+        return f"<h2 style='color:red;'>❌ Error: {str(e)}</h2><p><a href='/register'>Try again</a></p>"
 
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login", response_class=HTMLResponse)
 async def login_user(email: str = Form(...), password: str = Form(...)):
-    hashed = hashlib.sha256(password.encode()).hexdigest()
-    cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
-    user = cursor.fetchone()
-    if user:
-        access_token = create_access_token({"sub": user[0]})
-        response = RedirectResponse(url="/contracts", status_code=303)
-        response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=1800)
-        return response
-    else:
-        return templates.TemplateResponse("login.html", {
-            "request": request, 
-            "error": "Invalid credentials"
-        })
+    try:
+        hashed = hashlib.sha256(password.encode()).hexdigest()
+        cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
+        user = cursor.fetchone()
+        if user:
+            return f"<h2 style='color:green;'>✅ Login successful!</h2><p>User ID: {user[0]}</p><p><a href='/contracts'>View contracts</a></p>"
+        else:
+            return "<h2 style='color:red;'>❌ Invalid credentials</h2><p><a href='/login'>Try again</a> or <a href='/register'>register</a></p>"
+    except Exception as e:
+        return f"<h2 style='color:red;'>❌ Login error: {str(e)}</h2><p><a href='/login'>Try again</a></p>"
+
 
 @app.get("/logout")
 async def logout():
@@ -286,6 +292,7 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
 
 
 
