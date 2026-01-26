@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
     hashed_password TEXT NOT NULL
+    company_name TEXT NOT NULL,
+    cac_number TEXT NOT NULL   
 )
 """)
 
@@ -63,9 +65,13 @@ CREATE TABLE IF NOT EXISTS bids (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_id INTEGER,
     user_id INTEGER NOT NULL,
+    company_name TEXT,
+    cac_number TEXT
     email TEXT,
     phone TEXT,
     bid_amount REAL,
+    
+    
     equipment_list TEXT,
     workforce TEXT,
     status TEXT,
@@ -103,7 +109,14 @@ def register_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
 @app.post("/register", response_class=HTMLResponse)
-async def register_user(email: str = Form(...), password: str = Form(...)):
+async def register_user(company_name: str = Form(...),cac_number: str = Form(...),email: str = Form(...), password: str = Form(...)):
+   # Add CAC validation
+    if not cac_number.startswith('RC') or len(cac_number) < 8:
+        return "<h2 style='color:red;'>❌ Invalid CAC number (format: RC1234567)</h2>"
+    
+    cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
+                   (company_name, cac_number, email, hashed))
+``` 
     if not email or "@" not in email:
         return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
     
@@ -174,12 +187,20 @@ def contract_detail(request: Request, contract_id: int):
 async def submit_bid(
     request: Request,
     contract_id: int,
+    company_name: str = Form(...),
+    cac_number: str = Form(...), 
     email: str = Form(...),
     phone: str = Form(...),
     bid_amount: float = Form(...),
     equipment_list: str = Form(...),
     workforce: str = Form(...),
 ):
+    # Save with company info
+    cursor.execute("""
+        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
+
     try:
         user_id = get_current_user(request)
         
@@ -211,5 +232,6 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
 
 
