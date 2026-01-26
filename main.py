@@ -1,19 +1,30 @@
-from fastapi import FastAPI, Request, Form, HTTPException, Depends, status
+from fastapi import FastAPI, Request, Form, HTTPException, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
-import pandas as pd
 import sqlite3
-import joblib
-import os
 import hashlib
-import subprocess
-import sys
+import secrets
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+
+# CORS middleware (NO trailing spaces)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://akandeaka.github.io",
+        "http://localhost:8000",
+        "https://aisec.netlify.app"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+
+
 
 # JWT Configuration
 import secrets
@@ -82,17 +93,14 @@ model = joblib.load(MODEL_PATH)
 conn = sqlite3.connect("bids.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Create users table
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    hashed_password TEXT NOT NULL
 )
 """)
 
-# Create bids table
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS bids (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,41 +112,51 @@ CREATE TABLE IF NOT EXISTS bids (
     equipment_list TEXT,
     workforce TEXT,
     status TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 )
 """)
 conn.commit()
 
+def create_session(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    sessions[token] = user_id
+    return token
 
-# Create users table with proper constraints
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
+def get_current_user(request: Request):
+    token = request.cookies.get("session_token")
+    if not token or token not in sessions:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return sessions[token]
 
-# Create bids table with proper foreign key
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS bids (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contract_id INTEGER,
-    user_id INTEGER NOT NULL,
-    email TEXT,
-    phone TEXT,
-    bid_amount REAL,
-    equipment_list TEXT,
-    workforce TEXT,
-    status TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-)
-""")
-conn.commit()
+@app.post("/login", response_class=HTMLResponse)
+async def login_user(response: Response, email: str = Form(...), password: str = Form(...)):
+    try:
+        hashed = hashlib.sha256(password.encode()).hexdigest()
+        cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
+        user = cursor.fetchone()
+        if user:
+            # Create session and set cookie
+            session_token = create_session(user[0])
+            resp = RedirectResponse(url="/contracts", status_code=303)
+            resp.set_cookie(key="session_token", value=session_token, httponly=True, max_age=3600)
+            return resp
+        else:
+            return "<h2 style='color:red;'>❌ Invalid credentials</h2><p><a href='/login'>Try again</a></p>"
+    except Exception as e:
+        return f"<h2 style='color:red;'>❌ Login error: {str(e)}</h2><p><a href='/login'>Try again</a></p>"
 
+@app.get("/contracts", response_class=HTMLResponse)
+def contracts(request: Request):
+    try:
+        user_id = get_current_user(request)
+        return templates.TemplateResponse("contracts_fragment.html", {
+            "request": request, 
+            "contracts": df_bidding.to_dict(orient="records"),
+            "user_id": user_id
+        })
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
 
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
@@ -292,6 +310,7 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
 
 
 
