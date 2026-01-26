@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, HTTPException, Depends, status, Response
+from fastapi import FastAPI, Request, Form, HTTPException, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,107 +11,10 @@ import subprocess
 import sys
 import secrets
 
-# APP SETUP
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # CORS middleware (NO trailing spaces)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://akandeaka.github.io",
-        "http://localhost:8000",
-        "https://aisec.netlify.app"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# import secrets
-from fastapi import Response
-
-# Simple session storage
-sessions = {}
-
-def create_session(user_id: int) -> str:
-    """Create a new session token"""
-    token = secrets.token_urlsafe(32)
-    sessions[token] = user_id
-    return token
-
-def get_current_user(request: Request):
-    """Get current user from session cookie"""
-    token = request.cookies.get("session_token")
-    if not token or token not in sessions:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return sessions[token]
-
-@app.get("/register", response_class=HTMLResponse)
-def register_page(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request})
-
-@app.post("/register", response_class=HTMLResponse)
-async def register_user(email: str = Form(...), password: str = Form(...)):
-    if not email or "@" not in email:
-        return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
-    
-    if len(password) < 6:
-        return "<h2 style='color:red;'>❌ Password too short (min 6 characters)</h2><p><a href='/register'>Go back</a></p>"
-    
-    try:
-        hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (email, hashed))
-        conn.commit()
-        return "<h2 style='color:green;'>✅ Registration successful!</h2><p><a href='/login'>Login here</a></p>"
-    except sqlite3.IntegrityError:
-        return "<h2 style='color:red;'>❌ Email already registered</h2><p><a href='/login'>Login here</a></p>"
-
-@app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-@app.post("/login", response_class=HTMLResponse)
-async def login_user(response: Response, email: str = Form(...), password: str = Form(...)):
-    try:
-        hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
-        user = cursor.fetchone()
-        if user:
-            # Create session and set cookie
-            session_token = create_session(user[0])
-            resp = RedirectResponse(url="/contracts", status_code=303)
-            resp.set_cookie(key="session_token", value=session_token, httponly=True, max_age=3600)
-            return resp
-        else:
-            return "<h2 style='color:red;'>❌ Invalid credentials</h2><p><a href='/login'>Try again</a></p>"
-    except Exception as e:
-        return f"<h2 style='color:red;'>❌ Login error: {str(e)}</h2><p><a href='/login'>Try again</a></p>"
-
-@app.get("/logout", response_class=HTMLResponse)
-async def logout(response: Response):
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie("session_token")
-    return response
-
-@app.get("/contracts", response_class=HTMLResponse)
-def contracts(request: Request):
-    try:
-        user_id = get_current_user(request)
-        return templates.TemplateResponse("contracts_fragment.html", {
-            "request": request, 
-            "contracts": df_bidding.to_dict(orient="records"),
-            "user_id": user_id
-        })
-    except HTTPException:
-        return RedirectResponse(url="/login", status_code=303)
-```
-
-
-
-
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -172,16 +75,52 @@ CREATE TABLE IF NOT EXISTS bids (
 """)
 conn.commit()
 
+# Simple session storage
+sessions = {}
+
 def create_session(user_id: int) -> str:
+    """Create a new session token"""
     token = secrets.token_urlsafe(32)
     sessions[token] = user_id
     return token
 
 def get_current_user(request: Request):
+    """Get current user from session cookie"""
     token = request.cookies.get("session_token")
     if not token or token not in sessions:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return sessions[token]
+
+def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
+    return base_price * ((1 + inflation_rate) ** years)
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return RedirectResponse(url="/contracts")
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_user(email: str = Form(...), password: str = Form(...)):
+    if not email or "@" not in email:
+        return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
+    
+    if len(password) < 6:
+        return "<h2 style='color:red;'>❌ Password too short (min 6 characters)</h2><p><a href='/register'>Go back</a></p>"
+    
+    try:
+        hashed = hashlib.sha256(password.encode()).hexdigest()
+        cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (email, hashed))
+        conn.commit()
+        return "<h2 style='color:green;'>✅ Registration successful!</h2><p><a href='/login'>Login here</a></p>"
+    except sqlite3.IntegrityError:
+        return "<h2 style='color:red;'>❌ Email already registered</h2><p><a href='/login'>Login here</a></p>"
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login", response_class=HTMLResponse)
 async def login_user(response: Response, email: str = Form(...), password: str = Form(...)):
@@ -200,6 +139,12 @@ async def login_user(response: Response, email: str = Form(...), password: str =
     except Exception as e:
         return f"<h2 style='color:red;'>❌ Login error: {str(e)}</h2><p><a href='/login'>Try again</a></p>"
 
+@app.get("/logout", response_class=HTMLResponse)
+async def logout(response: Response):
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("session_token")
+    return response
+
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
     try:
@@ -212,111 +157,15 @@ def contracts(request: Request):
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
 
-def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
-    return base_price * ((1 + inflation_rate) ** years)
-
-def create_access_token( dict):
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode = {"exp": expire, **data}
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def get_current_user(token: str = None):
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        cursor.execute("SELECT id, email FROM users WHERE id = ?", (user_id,))
-        user = cursor.fetchone()
-        if user is None:
-            raise HTTPException(status_code=401, detail="User not found")
-        return {"id": user[0], "email": user[1]}
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return RedirectResponse(url="/contracts")
-
-@app.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request})
-
-@app.post("/register", response_class=HTMLResponse)
-async def register_user(email: str = Form(...), password: str = Form(...)):
-    if not email or "@" not in email:
-        return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
-    
-    if len(password) < 6:
-        return "<h2 style='color:red;'>❌ Password too short (min 6 characters)</h2><p><a href='/register'>Go back</a></p>"
-    
-    try:
-        hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (email, hashed))
-        conn.commit()
-        return "<h2 style='color:green;'>✅ Registration successful!</h2><p><a href='/login'>Login here</a></p>"
-    except sqlite3.IntegrityError:
-        return "<h2 style='color:red;'>❌ Email already registered</h2><p><a href='/login'>Login here</a></p>"
-    except Exception as e:
-        return f"<h2 style='color:red;'>❌ Error: {str(e)}</h2><p><a href='/register'>Try again</a></p>"
-
-@app.get("/register", response_class=HTMLResponse)
-def register_page(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request})
-
-@app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-@app.post("/login", response_class=HTMLResponse)
-async def login_user(email: str = Form(...), password: str = Form(...)):
-    try:
-        hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
-        user = cursor.fetchone()
-        if user:
-            return f"<h2 style='color:green;'>✅ Login successful!</h2><p>User ID: {user[0]}</p><p><a href='/contracts'>View contracts</a></p>"
-        else:
-            return "<h2 style='color:red;'>❌ Invalid credentials</h2><p><a href='/login'>Try again</a> or <a href='/register'>register</a></p>"
-    except Exception as e:
-        return f"<h2 style='color:red;'>❌ Login error: {str(e)}</h2><p><a href='/login'>Try again</a></p>"
-
-
-@app.get("/logout")
-async def logout():
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie("access_token")
-    return response
-
-@app.get("/contracts", response_class=HTMLResponse)
-def contracts(request: Request):
-    # Check if user is authenticated
-    token = request.cookies.get("access_token")
-    try:
-        user = get_current_user(token)
-        return templates.TemplateResponse("contracts_fragment.html", {
-            "request": request, 
-            "contracts": df_bidding.to_dict(orient="records"),
-            "user_id": user["id"]
-        })
-    except HTTPException:
-        return RedirectResponse(url="/login", status_code=303)
-
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
-    token = request.cookies.get("access_token")
     try:
-        user = get_current_user(token)
+        user_id = get_current_user(request)
         row = df_bidding.iloc[contract_id]
         return templates.TemplateResponse("contract_detail.html", {
             "request": request, 
             "contract": row.to_dict(),
-            "user_id": user["id"]
+            "user_id": user_id
         })
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
@@ -331,10 +180,8 @@ async def submit_bid(
     equipment_list: str = Form(...),
     workforce: str = Form(...),
 ):
-    token = request.cookies.get("access_token")
     try:
-        user = get_current_user(token)
-        user_id = user["id"]
+        user_id = get_current_user(request)
         
         bidding_contract = df_bidding.iloc[contract_id]
         feature_columns = [
@@ -364,11 +211,5 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
-
-
-
-
-
-
 
 
