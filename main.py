@@ -1,12 +1,17 @@
-import os
-from fastapi import FastAPI, Request, Form, HTTPException, Response
+from fastapi import FastAPI, Request, Form, HTTPException, Depends, status, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+import pandas as pd
 import sqlite3
+import joblib
+import os
 import hashlib
+import subprocess
+import sys
 import secrets
 
+# APP SETUP
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
@@ -22,9 +27,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-
 
 
 # JWT Configuration
@@ -311,6 +313,7 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
 
 
 
