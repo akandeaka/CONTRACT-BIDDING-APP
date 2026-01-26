@@ -29,35 +29,86 @@ app.add_middleware(
 )
 
 
-# JWT Configuration
-import secrets
-from datetime import datetime, timedelta
+# import secrets
+from fastapi import Response
 
-# Simple session storage (in production, use Redis or database)
+# Simple session storage
 sessions = {}
 
-def create_session_token(user_id: int) -> str:
+def create_session(user_id: int) -> str:
+    """Create a new session token"""
     token = secrets.token_urlsafe(32)
-    sessions[token] = {
-        "user_id": user_id,
-        "expires_at": datetime.utcnow() + timedelta(minutes=30)
-    }
+    sessions[token] = user_id
     return token
 
-def get_current_user(token: str = None):
+def get_current_user(request: Request):
+    """Get current user from session cookie"""
+    token = request.cookies.get("session_token")
     if not token or token not in sessions:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    return sessions[token]
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_user(email: str = Form(...), password: str = Form(...)):
+    if not email or "@" not in email:
+        return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
     
-    session = sessions[token]
-    if datetime.utcnow() > session["expires_at"]:
-        del sessions[token]
-        raise HTTPException(status_code=401, detail="Session expired")
+    if len(password) < 6:
+        return "<h2 style='color:red;'>❌ Password too short (min 6 characters)</h2><p><a href='/register'>Go back</a></p>"
     
-    cursor.execute("SELECT id, email FROM users WHERE id = ?", (session["user_id"],))
-    user = cursor.fetchone()
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return {"id": user[0], "email": user[1]}
+    try:
+        hashed = hashlib.sha256(password.encode()).hexdigest()
+        cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (email, hashed))
+        conn.commit()
+        return "<h2 style='color:green;'>✅ Registration successful!</h2><p><a href='/login'>Login here</a></p>"
+    except sqlite3.IntegrityError:
+        return "<h2 style='color:red;'>❌ Email already registered</h2><p><a href='/login'>Login here</a></p>"
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_user(response: Response, email: str = Form(...), password: str = Form(...)):
+    try:
+        hashed = hashlib.sha256(password.encode()).hexdigest()
+        cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
+        user = cursor.fetchone()
+        if user:
+            # Create session and set cookie
+            session_token = create_session(user[0])
+            resp = RedirectResponse(url="/contracts", status_code=303)
+            resp.set_cookie(key="session_token", value=session_token, httponly=True, max_age=3600)
+            return resp
+        else:
+            return "<h2 style='color:red;'>❌ Invalid credentials</h2><p><a href='/login'>Try again</a></p>"
+    except Exception as e:
+        return f"<h2 style='color:red;'>❌ Login error: {str(e)}</h2><p><a href='/login'>Try again</a></p>"
+
+@app.get("/logout", response_class=HTMLResponse)
+async def logout(response: Response):
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("session_token")
+    return response
+
+@app.get("/contracts", response_class=HTMLResponse)
+def contracts(request: Request):
+    try:
+        user_id = get_current_user(request)
+        return templates.TemplateResponse("contracts_fragment.html", {
+            "request": request, 
+            "contracts": df_bidding.to_dict(orient="records"),
+            "user_id": user_id
+        })
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
+```
+
+
 
 
 # Add CORS middleware
@@ -313,6 +364,7 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
 
 
 
