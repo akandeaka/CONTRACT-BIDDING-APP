@@ -54,9 +54,9 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL
+    hashed_password TEXT NOT NULL,
     company_name TEXT NOT NULL,
-    cac_number TEXT NOT NULL   
+    cac_number TEXT NOT NULL
 )
 """)
 
@@ -66,12 +66,10 @@ CREATE TABLE IF NOT EXISTS bids (
     contract_id INTEGER,
     user_id INTEGER NOT NULL,
     company_name TEXT,
-    cac_number TEXT
+    cac_number TEXT,
     email TEXT,
     phone TEXT,
     bid_amount REAL,
-    
-    
     equipment_list TEXT,
     workforce TEXT,
     status TEXT,
@@ -109,27 +107,24 @@ def register_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
 @app.post("/register", response_class=HTMLResponse)
-async def register_user(company_name: str = Form(...),cac_number: str = Form(...),email: str = Form(...), password: str = Form(...)):
-   # Add CAC validation
-    if not cac_number.startswith('RC') or len(cac_number) < 8:
-        return "<h2 style='color:red;'>❌ Invalid CAC number (format: RC1234567)</h2>"
-    
-    cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
-                   (company_name, cac_number, email, hashed))
-``` 
+async def register_user(company_name: str = Form(...), cac_number: str = Form(...), email: str = Form(...), password: str = Form(...)):
     if not email or "@" not in email:
         return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
     
     if len(password) < 6:
         return "<h2 style='color:red;'>❌ Password too short (min 6 characters)</h2><p><a href='/register'>Go back</a></p>"
     
+    # Validate CAC number format
+    if not cac_number.startswith('RC') or len(cac_number) < 8:
+        return "<h2 style='color:red;'>❌ Invalid CAC number (format: RC1234567)</h2><p><a href='/register'>Go back</a></p>"
+    
     try:
         hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("INSERT INTO users (email, hashed_password) VALUES (?, ?)", (email, hashed))
+        cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", (company_name, cac_number, email, hashed))
         conn.commit()
-        return "<h2 style='color:green;'>✅ Registration successful!</h2><p><a href='/login'>Login here</a></p>"
+        return "<h2 style='color:green;'>✅ Company registration successful!</h2><p><a href='/login'>Login here</a></p>"
     except sqlite3.IntegrityError:
-        return "<h2 style='color:red;'>❌ Email already registered</h2><p><a href='/login'>Login here</a></p>"
+        return "<h2 style='color:red;'>❌ CAC number or email already registered</h2><p><a href='/login'>Login here</a></p>"
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
@@ -142,7 +137,6 @@ async def login_user(response: Response, email: str = Form(...), password: str =
         cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
         user = cursor.fetchone()
         if user:
-            # Create session and set cookie
             session_token = create_session(user[0])
             resp = RedirectResponse(url="/contracts", status_code=303)
             resp.set_cookie(key="session_token", value=session_token, httponly=True, max_age=3600)
@@ -188,19 +182,13 @@ async def submit_bid(
     request: Request,
     contract_id: int,
     company_name: str = Form(...),
-    cac_number: str = Form(...), 
+    cac_number: str = Form(...),
     email: str = Form(...),
     phone: str = Form(...),
     bid_amount: float = Form(...),
     equipment_list: str = Form(...),
     workforce: str = Form(...),
 ):
-    # Save with company info
-    cursor.execute("""
-        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
-
     try:
         user_id = get_current_user(request)
         
@@ -223,15 +211,12 @@ async def submit_bid(
         status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
 
         cursor.execute("""
-        INSERT INTO bids (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (contract_id, user_id, email, phone, bid_amount, equipment_list, workforce, status_msg))
+        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
         conn.commit()
 
         return f"<h2>Bid Result</h2><p>Status: {status_msg}</p><br><a href='/contracts' class='btn btn-primary'>Back to Contracts</a>"
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
-
-
-
