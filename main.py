@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, Request, Form, HTTPException, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -10,6 +11,7 @@ import hashlib
 import subprocess
 import sys
 import secrets
+import re  # ← Added missing import
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -108,19 +110,34 @@ def register_page(request: Request):
 
 @app.post("/register", response_class=HTMLResponse)
 async def register_user(company_name: str = Form(...), cac_number: str = Form(...), email: str = Form(...), password: str = Form(...)):
+    # Email validation
     if not email or "@" not in email:
         return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
     
-    if len(password) < 6:
-        return "<h2 style='color:red;'>❌ Password too short (min 6 characters)</h2><p><a href='/register'>Go back</a></p>"
+    # Password complexity validation (8+ chars, uppercase, lowercase, number, special char)
+    password_pattern = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$"
+    if not re.match(password_pattern, password):
+        return """
+        <h2 style='color:red;'>❌ Password Requirements Not Met</h2>
+        <p>Password must contain:</p>
+        <ul>
+            <li>At least 8 characters</li>
+            <li>One uppercase letter (A-Z)</li>
+            <li>One lowercase letter (a-z)</li>
+            <li>One number (0-9)</li>
+            <li>One special character (@$!%*?&)</li>
+        </ul>
+        <p><a href='/register'>Go back</a></p>
+        """
     
-    # Validate CAC number format
+    # CAC validation
     if not cac_number.startswith('RC') or len(cac_number) < 8:
         return "<h2 style='color:red;'>❌ Invalid CAC number (format: RC1234567)</h2><p><a href='/register'>Go back</a></p>"
     
     try:
         hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", (company_name, cac_number, email, hashed))
+        cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
+                       (company_name, cac_number, email, hashed))
         conn.commit()
         return "<h2 style='color:green;'>✅ Company registration successful!</h2><p><a href='/login'>Login here</a></p>"
     except sqlite3.IntegrityError:
@@ -220,45 +237,3 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
-import re
-
-@app.post("/register", response_class=HTMLResponse)
-async def register_user(
-    company_name: str = Form(...),
-    cac_number: str = Form(...),
-    email: str = Form(...),
-    password: str = Form(...)
-):
-    # Email validation
-    if not email or "@" not in email:
-        return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
-    
-    # Password complexity validation (8+ chars, uppercase, lowercase, number, special char)
-    password_pattern = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$"
-    if not re.match(password_pattern, password):
-        return """
-        <h2 style='color:red;'>❌ Password Requirements Not Met</h2>
-        <p>Password must contain:</p>
-        <ul>
-            <li>At least 8 characters</li>
-            <li>One uppercase letter (A-Z)</li>
-            <li>One lowercase letter (a-z)</li>
-            <li>One number (0-9)</li>
-            <li>One special character (@$!%*?&)</li>
-        </ul>
-        <p><a href='/register'>Go back</a></p>
-        """
-    
-    # CAC validation
-    if not cac_number.startswith('RC') or len(cac_number) < 8:
-        return "<h2 style='color:red;'>❌ Invalid CAC number (format: RC1234567)</h2><p><a href='/register'>Go back</a></p>"
-    
-    try:
-        hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
-                       (company_name, cac_number, email, hashed))
-        conn.commit()
-        return "<h2 style='color:green;'>✅ Company registration successful!</h2><p><a href='/login'>Login here</a></p>"
-    except sqlite3.IntegrityError:
-        return "<h2 style='color:red;'>❌ CAC number or email already registered</h2><p><a href='/login'>Login here</a></p>"
-
