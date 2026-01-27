@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, Request, Form, HTTPException, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -181,18 +180,18 @@ def contracts(request: Request):
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
 
-@app.get("/contracts/{contract_id}", response_class=HTMLResponse)
-def contract_detail(request: Request, contract_id: int):
+@app.get("/contracts", response_class=HTMLResponse)
+def contracts(request: Request):
     try:
         user_id = get_current_user(request)
-        row = df_bidding.iloc[contract_id]
-        return templates.TemplateResponse("contract_detail.html", {
-            "request": request, 
-            "contract": row.to_dict(),
+        return templates.TemplateResponse("contracts_fragment.html", {
+            "request": request,
+            "contracts": df_bidding.to_dict(orient="records"),
             "user_id": user_id
         })
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
 
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
