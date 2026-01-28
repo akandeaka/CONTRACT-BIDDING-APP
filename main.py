@@ -10,7 +10,7 @@ import hashlib
 import subprocess
 import sys
 import secrets
-import re  # ← Added missing import
+import re
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -180,18 +180,18 @@ def contracts(request: Request):
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
 
-@app.get("/contracts", response_class=HTMLResponse)
-def contracts(request: Request):
+@app.get("/contracts/{contract_id}", response_class=HTMLResponse)
+def contract_detail(request: Request, contract_id: int):
     try:
         user_id = get_current_user(request)
-        return templates.TemplateResponse("contracts_fragment.html", {
-            "request": request,
-            "contracts": df_bidding.to_dict(orient="records"),
+        row = df_bidding.iloc[contract_id]
+        return templates.TemplateResponse("contract_detail.html", {
+            "request": request, 
+            "contract": row.to_dict(),
             "user_id": user_id
         })
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
-
 
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
@@ -236,3 +236,4 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+```
