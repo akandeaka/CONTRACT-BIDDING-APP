@@ -15,7 +15,7 @@ import re
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# CORS middleware (NO trailing spaces)
+ CORS middleware (CLEAN - no trailing spaces)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -28,9 +28,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# URLs for both datasets (NO trailing spaces)
+# URLs for both datasets (CLEAN - no trailing spaces)
 TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
+```
 
 MODEL_PATH = "model.pkl"
 
@@ -236,4 +237,5 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+
 
