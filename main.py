@@ -15,7 +15,7 @@ import re
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
- CORS middleware (CLEAN - no trailing spaces)
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -28,22 +28,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# URLs for both datasets (CLEAN - no trailing spaces)
+# URLs for datasets
 TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
-```
 
 MODEL_PATH = "model.pkl"
 
 def ensure_model_and_data():
-    """Train model using training data if not exists"""
     if not os.path.exists(MODEL_PATH):
         print("Training model...")
         subprocess.run([sys.executable, "train_model.py"], check=True)
 
 ensure_model_and_data()
 
-# Load both datasets
 df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)
 df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
@@ -81,17 +78,14 @@ CREATE TABLE IF NOT EXISTS bids (
 """)
 conn.commit()
 
-# Simple session storage
 sessions = {}
 
 def create_session(user_id: int) -> str:
-    """Create a new session token"""
     token = secrets.token_urlsafe(32)
     sessions[token] = user_id
     return token
 
 def get_current_user(request: Request):
-    """Get current user from session cookie"""
     token = request.cookies.get("session_token")
     if not token or token not in sessions:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -110,38 +104,14 @@ def register_page(request: Request):
 
 @app.post("/register", response_class=HTMLResponse)
 async def register_user(company_name: str = Form(...), cac_number: str = Form(...), email: str = Form(...), password: str = Form(...)):
-    # Email validation
-    if not email or "@" not in email:
-        return "<h2 style='color:red;'>❌ Invalid email format</h2><p><a href='/register'>Go back</a></p>"
-    
-    # Password complexity validation (8+ chars, uppercase, lowercase, number, special char)
-    password_pattern = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$"
-    if not re.match(password_pattern, password):
-        return """
-        <h2 style='color:red;'>❌ Password Requirements Not Met</h2>
-        <p>Password must contain:</p>
-        <ul>
-            <li>At least 8 characters</li>
-            <li>One uppercase letter (A-Z)</li>
-            <li>One lowercase letter (a-z)</li>
-            <li>One number (0-9)</li>
-            <li>One special character (@$!%*?&)</li>
-        </ul>
-        <p><a href='/register'>Go back</a></p>
-        """
-    
-    # CAC validation
-    if not cac_number.startswith('RC') or len(cac_number) < 8:
-        return "<h2 style='color:red;'>❌ Invalid CAC number (format: RC1234567)</h2><p><a href='/register'>Go back</a></p>"
-    
     try:
         hashed = hashlib.sha256(password.encode()).hexdigest()
         cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
                        (company_name, cac_number, email, hashed))
         conn.commit()
-        return "<h2 style='color:green;'>✅ Company registration successful!</h2><p><a href='/login'>Login here</a></p>"
+        return "<h2 style='color:green;'>✅ Registration successful!</h2><p><a href='/login'>Login here</a></p>"
     except sqlite3.IntegrityError:
-        return "<h2 style='color:red;'>❌ CAC number or email already registered</h2><p><a href='/login'>Login here</a></p>"
+        return "<h2 style='color:red;'>❌ Email already registered</h2><p><a href='/login'>Login here</a></p>"
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
@@ -149,19 +119,16 @@ def login_page(request: Request):
 
 @app.post("/login", response_class=HTMLResponse)
 async def login_user(response: Response, email: str = Form(...), password: str = Form(...)):
-    try:
-        hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
-        user = cursor.fetchone()
-        if user:
-            session_token = create_session(user[0])
-            resp = RedirectResponse(url="/contracts", status_code=303)
-            resp.set_cookie(key="session_token", value=session_token, httponly=True, max_age=3600)
-            return resp
-        else:
-            return "<h2 style='color:red;'>❌ Invalid credentials</h2><p><a href='/login'>Try again</a></p>"
-    except Exception as e:
-        return f"<h2 style='color:red;'>❌ Login error: {str(e)}</h2><p><a href='/login'>Try again</a></p>"
+    hashed = hashlib.sha256(password.encode()).hexdigest()
+    cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
+    user = cursor.fetchone()
+    if user:
+        session_token = create_session(user[0])
+        resp = RedirectResponse(url="/contracts", status_code=303)
+        resp.set_cookie(key="session_token", value=session_token, httponly=True, max_age=3600)
+        return resp
+    else:
+        return "<h2 style='color:red;'>❌ Invalid credentials</h2><p><a href='/login'>Try again</a></p>"
 
 @app.get("/logout", response_class=HTMLResponse)
 async def logout(response: Response):
@@ -237,5 +204,3 @@ async def submit_bid(
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
-
-
