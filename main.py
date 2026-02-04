@@ -105,8 +105,8 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         # Yahoo SMTP configuration
         EMAIL_HOST = "smtp.mail.yahoo.com"
         EMAIL_PORT = 587
-        EMAIL_USER = "aiseс.notifications@yahoo.com"  # ← Replace with your Yahoo email
-        EMAIL_PASSWORD = "your-16-char-app-password"  # ← Replace with your app password
+        EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← Replace with your Yahoo email
+        EMAIL_PASSWORD = "Qwerasd@()34"  # ← Replace with your app password
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -379,3 +379,4 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
