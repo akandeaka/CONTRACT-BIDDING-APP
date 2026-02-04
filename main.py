@@ -536,10 +536,12 @@ async def admin_logout(response: Response):
     response.delete_cookie("admin_token")
     return response
     @app.get("/admin/logout", response_class=HTMLResponse)
-async def admin_logout(response: Response):
-    response = RedirectResponse(url="/admin/login", status_code=303)
-    response.delete_cookie("admin_token")
-    return response
+   async def admin_logout(response: Response):
+       response = RedirectResponse(url="/admin/login", status_code=303)
+       response.delete_cookie("admin_token")
+       return response
+
+
 
 
 
