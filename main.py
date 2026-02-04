@@ -18,7 +18,7 @@ import re
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# CORS middleware (NO trailing spaces)
+# CORS middleware (CLEAN - NO trailing spaces)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -31,7 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# URLs for datasets (NO trailing spaces)
+# URLs for datasets (CLEAN - NO trailing spaces)
 TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
@@ -99,14 +99,14 @@ except sqlite3.IntegrityError:
 
 conn.commit()
 
-# Email function
+# Email function (GMAIL - CORRECTED)
 def send_bid_notification(email, company_name, contract_name, status, bid_amount):
     try:
-        # Yahoo SMTP configuration
-        EMAIL_HOST = "smtp.mail.yahoo.com"
+        # CORRECT Gmail SMTP configuration
+        EMAIL_HOST = "smtp.gmail.com"  # FIXED: Was "smtp.mail.gmail.com"
         EMAIL_PORT = 587
-        EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← Replace with your Yahoo email
-        EMAIL_PASSWORD = "Qwerasd@()34"  # ← Replace with your app password
+        EMAIL_USER = "aisec2025.notifications@gmail.com"  # Your Gmail
+        EMAIL_PASSWORD = "Qwerasd@()34"  # MUST BE APP PASSWORD
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -134,15 +134,16 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASSWORD)
-        text = msg.as_string()
-        server.sendmail(EMAIL_USER, email, text)
+        server.sendmail(EMAIL_USER, email, msg.as_string())
         server.quit()
         
-        print(f"Email sent successfully to {email}")
+        print(f"✓ Email sent to {email}")
+        return True
     except Exception as e:
-        print(f"Failed to send email: {str(e)}")
+        print(f"✗ Email failed: {str(e)}")
+        return False
 
-# Simple session storage
+# Session management
 sessions = {}
 
 def create_session(user_id: int) -> str:
@@ -165,6 +166,7 @@ def get_admin_user(request: Request):
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
 
+# ===== ROUTES =====
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return RedirectResponse(url="/contracts")
@@ -180,9 +182,9 @@ async def register_user(company_name: str = Form(...), cac_number: str = Form(..
         cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
                        (company_name, cac_number, email, hashed))
         conn.commit()
-        return "<h2 style='color:green;'>✅ Registration successful!</h2><p><a href='/login'>Login here</a></p>"
+        return "<h2 style='color:green;text-align:center;'>✅ Registration successful!</h2><p style='text-align:center;'><a href='/login'>Login here</a></p>"
     except sqlite3.IntegrityError:
-        return "<h2 style='color:red;'>❌ Email already registered</h2><p><a href='/login'>Login here</a></p>"
+        return "<h2 style='color:red;text-align:center;'>❌ Email already registered</h2><p style='text-align:center;'><a href='/login'>Login here</a></p>"
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
@@ -199,7 +201,7 @@ async def login_user(response: Response, email: str = Form(...), password: str =
         resp.set_cookie(key="session_token", value=session_token, httponly=True, max_age=3600)
         return resp
     else:
-        return "<h2 style='color:red;'>❌ Invalid credentials</h2><p><a href='/login'>Try again</a></p>"
+        return "<h2 style='color:red;text-align:center;'>❌ Invalid credentials</h2><p style='text-align:center;'><a href='/login'>Try again</a></p>"
 
 @app.get("/logout", response_class=HTMLResponse)
 async def logout(response: Response):
@@ -246,8 +248,8 @@ async def submit_bid(
 ):
     try:
         user_id = get_current_user(request)
-        
         bidding_contract = df_bidding.iloc[contract_id]
+        
         feature_columns = [
             "award_year", "award_month", "primary_state", "geopolitical_zone",
             "latitude_start", "longitude_start", "estimated_length_km",
@@ -262,7 +264,6 @@ async def submit_bid(
         base_price = model.predict(features_df)[0]
         adjusted = adjust_for_inflation(base_price)
         fair_min, fair_max = adjusted * 0.9, adjusted * 1.1
-
         status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
 
         cursor.execute("""
@@ -271,27 +272,60 @@ async def submit_bid(
         """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
         conn.commit()
 
-        # Send email notification
-        send_bid_notification(email, company_name, bidding_contract['project_name'], status_msg, bid_amount)
+        # Send email with fallback
+        email_sent = send_bid_notification(email, company_name, bidding_contract['project_name'], status_msg, bid_amount)
+        email_status = "<p style='color:green;text-align:center;'>📧 Email notification sent!</p>" if email_sent else "<p style='color:#f59e0b;text-align:center;'>⚠️ Bid submitted (email failed)</p>"
 
-        return f"<h2>✅ Bid Submitted Successfully!</h2><p>Status: {status_msg}</p><p>An email notification has been sent to {email}</p><br><a href='/contracts' class='btn btn-primary'>Back to Contracts</a>"
+        return f"""
+        <div style='max-width:600px;margin:30px auto;background:#f0fdf4;border:2px solid #10b981;border-radius:12px;padding:25px;text-align:center;box-shadow:0 4px 12px rgba(16,185,129,0.2)'>
+            <div style='width:60px;height:60px;background:#10b981;border-radius:50%;margin:0 auto 15px;display:flex;align-items:center;justify-content:center;color:white;font-size:28px'>✓</div>
+            <h2 style='color:#065f46;margin:0 0 15px'>Bid Submitted Successfully!</h2>
+            <div style='background:white;padding:15px;border-radius:8px;margin:15px 0;text-align:left'>
+                <p><strong>Contract:</strong> {bidding_contract['project_name']}</p>
+                <p><strong>Company:</strong> {company_name}</p>
+                <p><strong>Bid Amount:</strong> ₦{bid_amount:.2f} Billion</p>
+                <p style='font-weight:bold;color:{'#10b981' if 'Approved' in status_msg else '#ef4444'}'><strong>Status:</strong> {status_msg}</p>
+            </div>
+            {email_status}
+            <a href='/contracts' style='display:inline-block;margin-top:20px;padding:12px 30px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-weight:600'>View More Contracts</a>
+        </div>
+        """
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
+    except Exception as e:
+        error_msg = "Submission failed. Please try again."
+        if "FOREIGN KEY" in str(e):
+            error_msg = "Invalid contract selection."
+        elif "UNIQUE" in str(e):
+            error_msg = "This bid was already submitted."
+        
+        return f"""
+        <div style='max-width:600px;margin:30px auto;background:#fef2f2;border:2px solid #ef4444;border-radius:12px;padding:25px;text-align:center;box-shadow:0 4px 12px rgba(239,68,68,0.2)'>
+            <div style='width:60px;height:60px;background:#ef4444;border-radius:50%;margin:0 auto 15px;display:flex;align-items:center;justify-content:center;color:white;font-size:28px'>!</div>
+            <h2 style='color:#991b1b;margin:0 0 15px'>Bid Submission Failed</h2>
+            <p style='color:#7f1d1d;margin:15px 0'>{error_msg}</p>
+            <a href='/contracts' style='display:inline-block;margin-top:20px;padding:12px 30px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-weight:600'>Try Again</a>
+        </div>
+        """
 
+# ===== ADMIN ROUTES =====
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page(request: Request):
     return """
     <!DOCTYPE html>
     <html>
     <head><title>Admin Login - AISEC</title></head>
-    <body style="font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto;">
-        <h2 style="text-align: center;">AISEC Admin Login</h2>
-        <form method="POST" style="display: flex; flex-direction: column; gap: 15px;">
-            <input type="text" name="username" placeholder="Username" required style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-            <input type="password" name="password" placeholder="Password" required style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-            <button type="submit" style="padding: 10px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">Login</button>
-        </form>
+    <body style="font-family:Arial,sans-serif;background:#f0f9ff;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0">
+        <div style="background:white;padding:40px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.1);width:100%;max-width:400px;text-align:center">
+            <div style="font-size:48px;margin-bottom:20px">🛡️</div>
+            <h2 style="color:#1e40af;margin-bottom:30px">AISEC Admin Portal</h2>
+            <form method="POST" style="display:flex;flex-direction:column;gap:15px">
+                <input type="text" name="username" placeholder="Username" required style="padding:12px;border:1px solid #ddd;border-radius:8px;font-size:16px">
+                <input type="password" name="password" placeholder="Password" required style="padding:12px;border:1px solid #ddd;border-radius:8px;font-size:16px">
+                <button type="submit" style="padding:12px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer">Login to Dashboard</button>
+            </form>
+        </div>
     </body>
     </html>
     """
@@ -307,70 +341,54 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
         resp.set_cookie(key="admin_token", value=session_token, httponly=True, max_age=3600)
         return resp
     else:
-        return "<h2 style='color:red;'>Invalid admin credentials</h2><a href='/admin/login' style='color:#2563eb;'>Try again</a>"
+        return "<h2 style='color:red;text-align:center'>❌ Invalid credentials</h2><p style='text-align:center'><a href='/admin/login' style='color:#2563eb;text-decoration:none'>Try again</a></p>"
 
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     try:
         admin_id = get_admin_user(request)
-        
-        # Get all bids
         cursor.execute("SELECT * FROM bids ORDER BY timestamp DESC")
         bids = cursor.fetchall()
         
-        admin_html = """
+        return f"""
         <!DOCTYPE html>
         <html>
-        <head>
-            <title>AISEC Admin Dashboard</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-                th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                th { background-color: #f8fafc; font-weight: bold; }
-                .approved { color: green; font-weight: bold; }
-                .rejected { color: red; font-weight: bold; }
-                .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-                .logout { color: #ef4444; text-decoration: none; }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>AISEC Admin Dashboard</h1>
-                <a href="/admin/logout" class="logout">Logout</a>
+        <head><title>AISEC Admin Dashboard</title></head>
+        <body style="font-family:Arial,sans-serif;background:#f8fafc;margin:0;padding:20px">
+            <div style="background:linear-gradient(135deg,#1e40af,#0c4a6e);color:white;padding:20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 10px rgba(0,0,0,0.1)">
+                <h1 style="margin:0;font-size:24px">🛡️ AISEC Admin Dashboard</h1>
+                <a href="/admin/logout" style="background:#ef4444;color:white;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:600">Logout</a>
             </div>
-            <h2>All Bids</h2>
-            <table>
-                <tr>
-                    <th>Company Name</th>
-                    <th>CAC Number</th>
-                    <th>Email</th>
-                    <th>Bid Amount (₦B)</th>
-                    <th>Status</th>
-                    <th>Submitted</th>
-                </tr>
-        """
-        
-        for bid in bids:
-            status_class = "approved" if "Approved" in bid[10] else "rejected"
-            admin_html += f"""
-                <tr>
-                    <td>{bid[3]}</td>
-                    <td>{bid[4]}</td>
-                    <td>{bid[5]}</td>
-                    <td>{bid[8]:.2f}</td>
-                    <td class="{status_class}">{bid[10]}</td>
-                    <td>{bid[11]}</td>
-                </tr>
-            """
-        
-        admin_html += """
-            </table>
+            <div style="max-width:1400px;margin:30px auto;background:white;border-radius:12px;box-shadow:0 2px 15px rgba(0,0,0,0.08);overflow:hidden">
+                <div style="padding:25px;border-bottom:1px solid #e2e8f0">
+                    <h2 style="color:#1e293b;margin:0;font-size:24px">📊 Bid Management</h2>
+                </div>
+                <div style="overflow-x:auto">
+                    <table style="width:100%;border-collapse:collapse">
+                        <tr style="background:#f8fafc">
+                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Company</th>
+                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">CAC</th>
+                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Email</th>
+                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Bid (₦B)</th>
+                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Status</th>
+                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Submitted</th>
+                        </tr>
+                        {''.join(f"""
+                        <tr style="border-bottom:1px solid #f1f5f9">
+                            <td style="padding:12px">{bid[3]}</td>
+                            <td style="padding:12px">{bid[4]}</td>
+                            <td style="padding:12px">{bid[5]}</td>
+                            <td style="padding:12px">₦{bid[8]:.2f}</td>
+                            <td style="padding:12px;color:{'#10b981' if 'Approved' in str(bid[10]) else '#ef4444'};font-weight:600">{bid[10]}</td>
+                            <td style="padding:12px">{bid[11]}</td>
+                        </tr>
+                        """ for bid in bids)}
+                    </table>
+                </div>
+            </div>
         </body>
         </html>
         """
-        return admin_html
-        
     except HTTPException:
         return RedirectResponse(url="/admin/login", status_code=303)
 
@@ -379,4 +397,3 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
-
