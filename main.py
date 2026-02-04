@@ -338,8 +338,6 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
         return resp
     else:
         return "<h2 style='color:red;text-align:center'>❌ Invalid credentials</h2><p style='text-align:center'><a href='/admin/login' style='color:#2563eb;text-decoration:none'>Try again</a></p>"
-```
-
 
 # ===== ADMIN ROUTES =====
 @app.get("/admin/dashboard", response_class=HTMLResponse)
@@ -539,4 +537,11 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+    @app.get("/admin/logout", response_class=HTMLResponse)
+async def admin_logout(response: Response):
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie("admin_token")
+    return response
+
+
 
