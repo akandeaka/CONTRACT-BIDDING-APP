@@ -530,8 +530,6 @@ def admin_dashboard(request: Request):
         
     except HTTPException:
         return RedirectResponse(url="/admin/login", status_code=303)
-
-
 @app.get("/admin/logout", response_class=HTMLResponse)
 async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
@@ -542,6 +540,7 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
 
 
 
