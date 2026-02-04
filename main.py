@@ -102,46 +102,44 @@ conn.commit()
 # Email function (GMAIL - CORRECTED)
 def send_bid_notification(email, company_name, contract_name, status, bid_amount):
     try:
-        # CORRECT Gmail SMTP configuration
-        EMAIL_HOST = "smtp.gmail.com"  # FIXED: Was "smtp.mail.gmail.com"
+        # Gmail SMTP configuration (MUST use App Password)
+        EMAIL_HOST = "smtp.gmail.com"  # CORRECTED HOST
         EMAIL_PORT = 587
-        EMAIL_USER = "aisec2025.notifications@gmail.com"  # Your Gmail
-        EMAIL_PASSWORD = "Qwerasd@()34"  # MUST BE APP PASSWORD
+        EMAIL_USER = "aisec2025.notifications@gmail.com"
+        EMAIL_PASSWORD = "Qwerasd@()34"  # ← MUST BE 16-CHAR APP PASSWORD
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
         msg['To'] = email
         msg['Subject'] = f"AISEC Bid Submission - {status}"
         
-        body = f"""
-        Dear {company_name},
-        
-        Your bid for "{contract_name}" has been successfully submitted!
-        
-        Bid Amount: ₦{bid_amount:.2f} Billion
-        Status: {status}
-        
-        You can log in to your AISEC dashboard to view more details.
-        
-        Thank you for using AISEC - AI for Secure and Efficient Contracting.
-        
-        Best regards,
-        AISEC Team
-        """
+        body = f"""Dear {company_name},
+
+Your bid for "{contract_name}" has been successfully submitted!
+
+Bid Amount: ₦{bid_amount:.2f} Billion
+Status: {status}
+
+You can log in to your AISEC dashboard to view more details.
+
+Thank you for using AISEC - AI for Secure and Efficient Contracting.
+
+Best regards,
+AISEC Team"""
         
         msg.attach(MIMEText(body, 'plain'))
         
-        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASSWORD)
-        server.sendmail(EMAIL_USER, email, msg.as_string())
-        server.quit()
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_USER, EMAIL_PASSWORD)
+            server.send_message(msg)
         
-        print(f"✓ Email sent to {email}")
+        print(f"✓ Email sent to {email}")  # Appears in Render logs
         return True
     except Exception as e:
-        print(f"✗ Email failed: {str(e)}")
+        print(f"✗ Email FAILED to {email}: {str(e)}")  # Critical for debugging
         return False
+
 
 # Session management
 sessions = {}
@@ -308,8 +306,6 @@ async def submit_bid(
             <a href='/contracts' style='display:inline-block;margin-top:20px;padding:12px 30px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-weight:600'>Try Again</a>
         </div>
         """
-
-# ===== ADMIN ROUTES =====
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page(request: Request):
     return """
@@ -342,58 +338,205 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
         return resp
     else:
         return "<h2 style='color:red;text-align:center'>❌ Invalid credentials</h2><p style='text-align:center'><a href='/admin/login' style='color:#2563eb;text-decoration:none'>Try again</a></p>"
+```
 
+
+# ===== ADMIN ROUTES =====
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     try:
         admin_id = get_admin_user(request)
-        cursor.execute("SELECT * FROM bids ORDER BY timestamp DESC")
+        
+        # Get all bids with user details
+        cursor.execute("""
+            SELECT b.*, u.company_name as reg_company 
+            FROM bids b 
+            LEFT JOIN users u ON b.user_id = u.id 
+            ORDER BY b.timestamp DESC
+        """)
         bids = cursor.fetchall()
         
-        return f"""
+        # Prepare enhanced bid data with AI predictions
+        enhanced_bids = []
+        for bid in bids:
+            contract_id = bid[1]  # contract_id position
+            try:
+                # Get contract details from dataset
+                contract_row = df_bidding.iloc[contract_id]
+                contract_name = contract_row['project_name']
+                
+                # Recalculate AI prediction (same logic as bid submission)
+                feature_columns = [
+                    "award_year", "award_month", "primary_state", "geopolitical_zone",
+                    "latitude_start", "longitude_start", "estimated_length_km",
+                    "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
+                    "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
+                    "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
+                    "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
+                ]
+                features = contract_row[feature_columns]
+                features_df = pd.DataFrame([features.values], columns=features.index)
+                base_price = model.predict(features_df)[0]
+                adjusted = adjust_for_inflation(base_price)
+                fair_min = adjusted * 0.9
+                fair_max = adjusted * 1.1
+                
+                # Determine if bid is within fair range
+                bid_amount = bid[8]  # bid_amount position
+                is_fair = fair_min <= bid_amount <= fair_max
+                
+                enhanced_bids.append({
+                    'contract_name': contract_name,
+                    'company_name': bid[3] or bid[12] or 'N/A',
+                    'cac_number': bid[4] or 'N/A',
+                    'bid_amount': bid_amount,
+                    'fair_min': fair_min,
+                    'fair_max': fair_max,
+                    'is_fair': is_fair,
+                    'status': bid[10],
+                    'timestamp': bid[11],
+                    'email': bid[5]
+                })
+            except Exception as e:
+                # Fallback if contract not found
+                enhanced_bids.append({
+                    'contract_name': f'Contract ID {contract_id} (Error)',
+                    'company_name': bid[3] or 'N/A',
+                    'cac_number': bid[4] or 'N/A',
+                    'bid_amount': bid[8],
+                    'fair_min': 0,
+                    'fair_max': 0,
+                    'is_fair': False,
+                    'status': bid[10],
+                    'timestamp': bid[11],
+                    'email': bid[5]
+                })
+        
+        # Build enhanced HTML dashboard
+        admin_html = """
         <!DOCTYPE html>
         <html>
-        <head><title>AISEC Admin Dashboard</title></head>
-        <body style="font-family:Arial,sans-serif;background:#f8fafc;margin:0;padding:20px">
-            <div style="background:linear-gradient(135deg,#1e40af,#0c4a6e);color:white;padding:20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 10px rgba(0,0,0,0.1)">
-                <h1 style="margin:0;font-size:24px">🛡️ AISEC Admin Dashboard</h1>
-                <a href="/admin/logout" style="background:#ef4444;color:white;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:600">Logout</a>
+        <head>
+            <title>AISEC Admin Dashboard</title>
+            <style>
+                :root { --primary: #2563eb; --success: #10b981; --warning: #f59e0b; --danger: #ef4444; }
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8fafc; margin: 0; }
+                .header { background: linear-gradient(135deg, #1e40af, #0c4a6e); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+                .container { max-width: 1800px; margin: 30px auto; padding: 0 20px; }
+                .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px; }
+                .stat-card { background: white; border-radius: 16px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); text-align: center; border-top: 4px solid var(--primary); }
+                .stat-value { font-size: 36px; font-weight: 800; margin: 10px 0; color: var(--primary); }
+                .stat-label { color: #475569; font-size: 16px; }
+                .table-container { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-top: 20px; }
+                table { width: 100%; border-collapse: collapse; }
+                th { background: linear-gradient(135deg, #f8fafc, #e2e8f0); padding: 16px 12px; text-align: left; font-weight: 700; color: #1e40af; font-size: 14px; position: sticky; top: 0; }
+                td { padding: 14px 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+                tr:hover { background: #f8fafc; }
+                .fair { background: #f0fdf4; border-left: 4px solid var(--success); }
+                .unfair { background: #fff7ed; border-left: 4px solid var(--warning); }
+                .status-approved { color: var(--success); font-weight: 600; }
+                .status-rejected { color: var(--danger); font-weight: 600; }
+                .range-good { color: var(--success); font-weight: 600; }
+                .range-bad { color: var(--danger); font-weight: 600; }
+                .logout-btn { background: var(--danger); color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+                .logo { font-size: 28px; font-weight: bold; display: flex; align-items: center; gap: 12px; }
+                .highlight { background: #dbeafe; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="logo">🛡️ AISEC ADMIN DASHBOARD</div>
+                <a href="/admin/logout" class="logout-btn">Logout</a>
             </div>
-            <div style="max-width:1400px;margin:30px auto;background:white;border-radius:12px;box-shadow:0 2px 15px rgba(0,0,0,0.08);overflow:hidden">
-                <div style="padding:25px;border-bottom:1px solid #e2e8f0">
-                    <h2 style="color:#1e293b;margin:0;font-size:24px">📊 Bid Management</h2>
+            
+            <div class="container">
+                <h1 style="color: #1e293b; margin: 20px 0 30px; font-size: 32px;">📊 Bid Analysis & AI Comparison</h1>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">""" + str(len(enhanced_bids)) + """</div>
+                        <div class="stat-label">Total Bids</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #10b981;">
+                        <div class="stat-value">""" + str(sum(1 for b in enhanced_bids if b['is_fair'])) + """</div>
+                        <div class="stat-label">Fair Bids (AI Approved)</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #f59e0b;">
+                        <div class="stat-value">""" + str(sum(1 for b in enhanced_bids if not b['is_fair'])) + """</div>
+                        <div class="stat-label">Inflated Bids (AI Flagged)</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #0ea5e9;">
+                        <div class="stat-value">₦""" + f"{sum(b['bid_amount'] for b in enhanced_bids):.2f}" + """B</div>
+                        <div class="stat-label">Total Bid Value</div>
+                    </div>
                 </div>
-                <div style="overflow-x:auto">
-                    <table style="width:100%;border-collapse:collapse">
-                        <tr style="background:#f8fafc">
-                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Company</th>
-                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">CAC</th>
-                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Email</th>
-                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Bid (₦B)</th>
-                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Status</th>
-                            <th style="padding:14px;text-align:left;font-weight:700;color:#1e40af;border-bottom:1px solid #e2e8f0">Submitted</th>
-                        </tr>
-                        {''.join(f"""
-                        <tr style="border-bottom:1px solid #f1f5f9">
-                            <td style="padding:12px">{bid[3]}</td>
-                            <td style="padding:12px">{bid[4]}</td>
-                            <td style="padding:12px">{bid[5]}</td>
-                            <td style="padding:12px">₦{bid[8]:.2f}</td>
-                            <td style="padding:12px;color:{'#10b981' if 'Approved' in str(bid[10]) else '#ef4444'};font-weight:600">{bid[10]}</td>
-                            <td style="padding:12px">{bid[11]}</td>
-                        </tr>
-                        """ for bid in bids)}
+                
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Contract Name</th>
+                                <th>Company / CAC</th>
+                                <th>Email</th>
+                                <th>Bid Amount (₦B)</th>
+                                <th>AI Fair Range (₦B)</th>
+                                <th>AI Assessment</th>
+                                <th>Status</th>
+                                <th>Submitted</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        """
+        
+        for bid in enhanced_bids:
+            row_class = "fair" if bid['is_fair'] else "unfair"
+            ai_assessment = "✅ FAIR PRICE" if bid['is_fair'] else "⚠️ INFLATED"
+            ai_class = "range-good" if bid['is_fair'] else "range-bad"
+            status_class = "status-approved" if "Approved" in str(bid['status']) else "status-rejected"
+            
+            admin_html += f"""
+            <tr class="{row_class}">
+                <td><strong>{bid['contract_name']}</strong></td>
+                <td>
+                    <div>{bid['company_name']}</div>
+                    <div style="color: #64748b; font-size: 13px;">CAC: {bid['cac_number']}</div>
+                </td>
+                <td>{bid['email']}</td>
+                <td><strong>₦{bid['bid_amount']:.2f}</strong></td>
+                <td><span class="{ai_class}">₦{bid['fair_min']:.2f} - ₦{bid['fair_max']:.2f}</span></td>
+                <td><span class="{ai_class}">{ai_assessment}</span></td>
+                <td><span class="{status_class}">{bid['status']}</span></td>
+                <td style="color: #64748b; font-size: 13px;">{bid['timestamp']}</td>
+            </tr>
+            """
+        
+        admin_html += """
+                        </tbody>
                     </table>
+                </div>
+                
+                <div style="background: white; border-radius: 16px; padding: 25px; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.08);">
+                    <h2 style="color: #1e40af; margin-top: 0;">🔍 How AI Assessment Works</h2>
+                    <ul style="line-height: 1.8; color: #475569; padding-left: 25px;">
+                        <li><span class="highlight">Green rows</span> = Bid amount falls within AI's calculated fair price range (±10% of inflation-adjusted prediction)</li>
+                        <li><span class="highlight">Orange rows</span> = Bid amount exceeds AI's fair range (potential fraud indicator)</li>
+                        <li>AI considers: Terrain type, location coordinates, soil conditions, bridge requirements, historical pricing, and inflation</li>
+                        <li>All predictions use the same model that evaluated bids at submission time</li>
+                    </ul>
                 </div>
             </div>
         </body>
         </html>
         """
+        return admin_html
+        
     except HTTPException:
         return RedirectResponse(url="/admin/login", status_code=303)
+
 
 @app.get("/admin/logout", response_class=HTMLResponse)
 async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
