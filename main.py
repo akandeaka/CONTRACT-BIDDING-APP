@@ -18,7 +18,7 @@ import re
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# CORS middleware (CLEAN - NO trailing spaces)
+# CORS middleware (NO trailing spaces - CRITICAL FIX)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -31,7 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# URLs for datasets (CLEAN - NO trailing spaces)
+# URLs for datasets (NO trailing spaces - CRITICAL FIX)
 TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
@@ -103,10 +103,10 @@ conn.commit()
 def send_bid_notification(email, company_name, contract_name, status, bid_amount):
     try:
         # Gmail SMTP configuration (MUST use App Password)
-        EMAIL_HOST = "smtp.gmail.com"  # CORRECTED HOST
+        EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"
-        EMAIL_PASSWORD = "Qwerasd@()34"  # ← MUST BE 16-CHAR APP PASSWORD
+        EMAIL_PASSWORD = "YOUR_GMAIL_APP_PASSWORD"  # ← REPLACE WITH 16-CHAR APP PASSWORD
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -134,12 +134,11 @@ AISEC Team"""
             server.login(EMAIL_USER, EMAIL_PASSWORD)
             server.send_message(msg)
         
-        print(f"✓ Email sent to {email}")  # Appears in Render logs
+        print(f"✓ Email sent to {email}")
         return True
     except Exception as e:
-        print(f"✗ Email FAILED to {email}: {str(e)}")  # Critical for debugging
+        print(f"✗ Email FAILED to {email}: {str(e)}")
         return False
-
 
 # Session management
 sessions = {}
@@ -270,7 +269,6 @@ async def submit_bid(
         """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
         conn.commit()
 
-        # Send email with fallback
         email_sent = send_bid_notification(email, company_name, bidding_contract['project_name'], status_msg, bid_amount)
         email_status = "<p style='color:green;text-align:center;'>📧 Email notification sent!</p>" if email_sent else "<p style='color:#f59e0b;text-align:center;'>⚠️ Bid submitted (email failed)</p>"
 
@@ -306,6 +304,7 @@ async def submit_bid(
             <a href='/contracts' style='display:inline-block;margin-top:20px;padding:12px 30px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-weight:600'>Try Again</a>
         </div>
         """
+
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page(request: Request):
     return """
@@ -339,13 +338,11 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
     else:
         return "<h2 style='color:red;text-align:center'>❌ Invalid credentials</h2><p style='text-align:center'><a href='/admin/login' style='color:#2563eb;text-decoration:none'>Try again</a></p>"
 
-# ===== ADMIN ROUTES =====
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     try:
         admin_id = get_admin_user(request)
         
-        # Get all bids with user details
         cursor.execute("""
             SELECT b.*, u.company_name as reg_company 
             FROM bids b 
@@ -354,16 +351,13 @@ def admin_dashboard(request: Request):
         """)
         bids = cursor.fetchall()
         
-        # Prepare enhanced bid data with AI predictions
         enhanced_bids = []
         for bid in bids:
-            contract_id = bid[1]  # contract_id position
+            contract_id = bid[1]
             try:
-                # Get contract details from dataset
                 contract_row = df_bidding.iloc[contract_id]
                 contract_name = contract_row['project_name']
                 
-                # Recalculate AI prediction (same logic as bid submission)
                 feature_columns = [
                     "award_year", "award_month", "primary_state", "geopolitical_zone",
                     "latitude_start", "longitude_start", "estimated_length_km",
@@ -378,9 +372,7 @@ def admin_dashboard(request: Request):
                 adjusted = adjust_for_inflation(base_price)
                 fair_min = adjusted * 0.9
                 fair_max = adjusted * 1.1
-                
-                # Determine if bid is within fair range
-                bid_amount = bid[8]  # bid_amount position
+                bid_amount = bid[8]
                 is_fair = fair_min <= bid_amount <= fair_max
                 
                 enhanced_bids.append({
@@ -396,7 +388,6 @@ def admin_dashboard(request: Request):
                     'email': bid[5]
                 })
             except Exception as e:
-                # Fallback if contract not found
                 enhanced_bids.append({
                     'contract_name': f'Contract ID {contract_id} (Error)',
                     'company_name': bid[3] or 'N/A',
@@ -410,7 +401,6 @@ def admin_dashboard(request: Request):
                     'email': bid[5]
                 })
         
-        # Build enhanced HTML dashboard
         admin_html = """
         <!DOCTYPE html>
         <html>
@@ -530,15 +520,9 @@ def admin_dashboard(request: Request):
         
     except HTTPException:
         return RedirectResponse(url="/admin/login", status_code=303)
-   @app.get("/admin/logout", response_class=HTMLResponse)
-   async def admin_logout(response: Response):
-       response = RedirectResponse(url="/admin/login", status_code=303)
-       response.delete_cookie("admin_token")
-       return response
 
-
-
-
-
-
-
+@app.get("/admin/logout", response_class=HTMLResponse)
+async def admin_logout(response: Response):
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie("admin_token")
+    return response
