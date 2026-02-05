@@ -106,7 +106,7 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"
-        EMAIL_PASSWORD = "YOUR_GMAIL_APP_PASSWORD"  # ← REPLACE WITH 16-CHAR APP PASSWORD
+        EMAIL_PASSWORD = "Qwerasd@()34"  # ← REPLACE WITH 16-CHAR APP PASSWORD
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -338,68 +338,6 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
     else:
         return "<h2 style='color:red;text-align:center'>❌ Invalid credentials</h2><p style='text-align:center'><a href='/admin/login' style='color:#2563eb;text-decoration:none'>Try again</a></p>"
 
-@app.get("/admin/dashboard", response_class=HTMLResponse)
-def admin_dashboard(request: Request):
-    try:
-        admin_id = get_admin_user(request)
-        
-        cursor.execute("""
-            SELECT b.*, u.company_name as reg_company 
-            FROM bids b 
-            LEFT JOIN users u ON b.user_id = u.id 
-            ORDER BY b.timestamp DESC
-        """)
-        bids = cursor.fetchall()
-        
-        enhanced_bids = []
-        for bid in bids:
-            contract_id = bid[1]
-            try:
-                contract_row = df_bidding.iloc[contract_id]
-                contract_name = contract_row['project_name']
-                
-                feature_columns = [
-                    "award_year", "award_month", "primary_state", "geopolitical_zone",
-                    "latitude_start", "longitude_start", "estimated_length_km",
-                    "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
-                    "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
-                    "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
-                    "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
-                ]
-                features = contract_row[feature_columns]
-                features_df = pd.DataFrame([features.values], columns=features.index)
-                base_price = model.predict(features_df)[0]
-                adjusted = adjust_for_inflation(base_price)
-                fair_min = adjusted * 0.9
-                fair_max = adjusted * 1.1
-                bid_amount = bid[8]
-                is_fair = fair_min <= bid_amount <= fair_max
-                
-                enhanced_bids.append({
-                    'contract_name': contract_name,
-                    'company_name': bid[3] or bid[12] or 'N/A',
-                    'cac_number': bid[4] or 'N/A',
-                    'bid_amount': bid_amount,
-                    'fair_min': fair_min,
-                    'fair_max': fair_max,
-                    'is_fair': is_fair,
-                    'status': bid[10],
-                    'timestamp': bid[11],
-                    'email': bid[5]
-                })
-            except Exception as e:
-                enhanced_bids.append({
-                    'contract_name': f'Contract ID {contract_id} (Error)',
-                    'company_name': bid[3] or 'N/A',
-                    'cac_number': bid[4] or 'N/A',
-                    'bid_amount': bid[8],
-                    'fair_min': 0,
-                    'fair_max': 0,
-                    'is_fair': False,
-                    'status': bid[10],
-                    'timestamp': bid[11],
-                    'email': bid[5]
-                })
         
         admin_html = """
         <!DOCTYPE html>
@@ -526,3 +464,4 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
