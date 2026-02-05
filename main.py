@@ -337,6 +337,198 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
         return resp
     else:
         return "<h2 style='color:red;text-align:center'>❌ Invalid credentials</h2><p style='text-align:center'><a href='/admin/login' style='color:#2563eb;text-decoration:none'>Try again</a></p>"
+@app.get("/admin/dashboard", response_class=HTMLResponse)
+def admin_dashboard(request: Request):
+    try:
+        admin_id = get_admin_user(request)
+        
+        # Get all bids (NO JOIN needed - we store company info in bids table)
+        cursor.execute("""
+            SELECT id, contract_id, company_name, cac_number, email, phone, 
+                   bid_amount, equipment_list, workforce, status, timestamp
+            FROM bids 
+            ORDER BY timestamp DESC
+        """)
+        bids = cursor.fetchall()
+        
+        # Prepare enhanced bid data with AI predictions
+        enhanced_bids = []
+        for bid in bids:
+            contract_id = bid[1]  # contract_id at index 1
+            try:
+                contract_row = df_bidding.iloc[contract_id]
+                contract_name = contract_row['project_name']
+                
+                # Recalculate AI prediction
+                feature_columns = [
+                    "award_year", "award_month", "primary_state", "geopolitical_zone",
+                    "latitude_start", "longitude_start", "estimated_length_km",
+                    "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
+                    "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
+                    "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
+                    "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
+                ]
+                features = contract_row[feature_columns]
+                features_df = pd.DataFrame([features.values], columns=features.index)
+                base_price = model.predict(features_df)[0]
+                adjusted = adjust_for_inflation(base_price)
+                fair_min = adjusted * 0.9
+                fair_max = adjusted * 1.1
+                
+                # CORRECT INDEXING (critical fix):
+                bid_amount = bid[6]  # bid_amount is at index 6 in this query
+                is_fair = fair_min <= bid_amount <= fair_max
+                
+                enhanced_bids.append({
+                    'contract_name': contract_name,
+                    'company_name': bid[2] or 'N/A',  # company_name at index 2
+                    'cac_number': bid[3] or 'N/A',    # cac_number at index 3
+                    'bid_amount': bid_amount,
+                    'fair_min': fair_min,
+                    'fair_max': fair_max,
+                    'is_fair': is_fair,
+                    'status': bid[9],                 # status at index 9
+                    'timestamp': bid[10],             # timestamp at index 10
+                    'email': bid[4]                   # email at index 4
+                })
+            except Exception as e:
+                print(f"Error processing bid {bid[0]}: {str(e)}")
+                enhanced_bids.append({
+                    'contract_name': f'Contract ID {contract_id} (Error)',
+                    'company_name': bid[2] or 'N/A',
+                    'cac_number': bid[3] or 'N/A',
+                    'bid_amount': bid[6],
+                    'fair_min': 0,
+                    'fair_max': 0,
+                    'is_fair': False,
+                    'status': bid[9],
+                    'timestamp': bid[10],
+                    'email': bid[4]
+                })
+        
+        # Build enhanced HTML dashboard (same as before - no changes needed here)
+        admin_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>AISEC Admin Dashboard</title>
+            <style>
+                :root { --primary: #2563eb; --success: #10b981; --warning: #f59e0b; --danger: #ef4444; }
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8fafc; margin: 0; }
+                .header { background: linear-gradient(135deg, #1e40af, #0c4a6e); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+                .container { max-width: 1800px; margin: 30px auto; padding: 0 20px; }
+                .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px; }
+                .stat-card { background: white; border-radius: 16px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); text-align: center; border-top: 4px solid var(--primary); }
+                .stat-value { font-size: 36px; font-weight: 800; margin: 10px 0; color: var(--primary); }
+                .stat-label { color: #475569; font-size: 16px; }
+                .table-container { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-top: 20px; }
+                table { width: 100%; border-collapse: collapse; }
+                th { background: linear-gradient(135deg, #f8fafc, #e2e8f0); padding: 16px 12px; text-align: left; font-weight: 700; color: #1e40af; font-size: 14px; position: sticky; top: 0; }
+                td { padding: 14px 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+                tr:hover { background: #f8fafc; }
+                .fair { background: #f0fdf4; border-left: 4px solid var(--success); }
+                .unfair { background: #fff7ed; border-left: 4px solid var(--warning); }
+                .status-approved { color: var(--success); font-weight: 600; }
+                .status-rejected { color: var(--danger); font-weight: 600; }
+                .range-good { color: var(--success); font-weight: 600; }
+                .range-bad { color: var(--danger); font-weight: 600; }
+                .logout-btn { background: var(--danger); color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+                .logo { font-size: 28px; font-weight: bold; display: flex; align-items: center; gap: 12px; }
+                .highlight { background: #dbeafe; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="logo">🛡️ AISEC ADMIN DASHBOARD</div>
+                <a href="/admin/logout" class="logout-btn">Logout</a>
+            </div>
+            
+            <div class="container">
+                <h1 style="color: #1e293b; margin: 20px 0 30px; font-size: 32px;">📊 Bid Analysis & AI Comparison</h1>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">""" + str(len(enhanced_bids)) + """</div>
+                        <div class="stat-label">Total Bids</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #10b981;">
+                        <div class="stat-value">""" + str(sum(1 for b in enhanced_bids if b['is_fair'])) + """</div>
+                        <div class="stat-label">Fair Bids (AI Approved)</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #f59e0b;">
+                        <div class="stat-value">""" + str(sum(1 for b in enhanced_bids if not b['is_fair'])) + """</div>
+                        <div class="stat-label">Inflated Bids (AI Flagged)</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #0ea5e9;">
+                        <div class="stat-value">₦""" + f"{sum(b['bid_amount'] for b in enhanced_bids):.2f}" + """B</div>
+                        <div class="stat-label">Total Bid Value</div>
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Contract Name</th>
+                                <th>Company / CAC</th>
+                                <th>Email</th>
+                                <th>Bid Amount (₦B)</th>
+                                <th>AI Fair Range (₦B)</th>
+                                <th>AI Assessment</th>
+                                <th>Status</th>
+                                <th>Submitted</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        """
+        
+        for bid in enhanced_bids:
+            row_class = "fair" if bid['is_fair'] else "unfair"
+            ai_assessment = "✅ FAIR PRICE" if bid['is_fair'] else "⚠️ INFLATED"
+            ai_class = "range-good" if bid['is_fair'] else "range-bad"
+            status_class = "status-approved" if "Approved" in str(bid['status']) else "status-rejected"
+            
+            admin_html += f"""
+            <tr class="{row_class}">
+                <td><strong>{bid['contract_name']}</strong></td>
+                <td>
+                    <div>{bid['company_name']}</div>
+                    <div style="color: #64748b; font-size: 13px;">CAC: {bid['cac_number']}</div>
+                </td>
+                <td>{bid['email']}</td>
+                <td><strong>₦{bid['bid_amount']:.2f}</strong></td>
+                <td><span class="{ai_class}">₦{bid['fair_min']:.2f} - ₦{bid['fair_max']:.2f}</span></td>
+                <td><span class="{ai_class}">{ai_assessment}</span></td>
+                <td><span class="{status_class}">{bid['status']}</span></td>
+                <td style="color: #64748b; font-size: 13px;">{bid['timestamp']}</td>
+            </tr>
+            """
+        
+        admin_html += """
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div style="background: white; border-radius: 16px; padding: 25px; margin-top: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.08);">
+                    <h2 style="color: #1e40af; margin-top: 0;">🔍 How AI Assessment Works</h2>
+                    <ul style="line-height: 1.8; color: #475569; padding-left: 25px;">
+                        <li><span class="highlight">Green rows</span> = Bid amount falls within AI's calculated fair price range (±10% of inflation-adjusted prediction)</li>
+                        <li><span class="highlight">Orange rows</span> = Bid amount exceeds AI's fair range (potential fraud indicator)</li>
+                        <li>AI considers: Terrain type, location coordinates, soil conditions, bridge requirements, historical pricing, and inflation</li>
+                        <li>All predictions use the same model that evaluated bids at submission time</li>
+                    </ul>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return admin_html
+        
+    except HTTPException:
+        return RedirectResponse(url="/admin/login", status_code=303)
+```
+
+---
 
         
         admin_html = """
@@ -464,4 +656,5 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
 
