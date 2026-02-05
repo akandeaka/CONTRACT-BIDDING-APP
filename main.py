@@ -342,14 +342,77 @@ def admin_dashboard(request: Request):
     try:
         admin_id = get_admin_user(request)
         
-        # Get all bids (NO JOIN needed - we store company info in bids table)
+        # CORRECT QUERY (NO JOIN - matches your actual database)
         cursor.execute("""
-            SELECT id, contract_id, company_name, cac_number, email, phone, 
-                   bid_amount, equipment_list, workforce, status, timestamp
+            SELECT id, contract_id, user_id, company_name, cac_number, email, 
+                   phone, bid_amount, equipment_list, workforce, status, timestamp
             FROM bids 
             ORDER BY timestamp DESC
         """)
         bids = cursor.fetchall()
+        
+        # Prepare enhanced bid data with AI predictions
+        enhanced_bids = []
+        for bid in bids:
+            contract_id = bid[1]  # contract_id at index 1
+            try:
+                contract_row = df_bidding.iloc[contract_id]
+                contract_name = contract_row['project_name']
+                
+                # Recalculate AI prediction
+                feature_columns = [
+                    "award_year", "award_month", "primary_state", "geopolitical_zone",
+                    "latitude_start", "longitude_start", "estimated_length_km",
+                    "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
+                    "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
+                    "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
+                    "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
+                ]
+                features = contract_row[feature_columns]
+                features_df = pd.DataFrame([features.values], columns=features.index)
+                base_price = model.predict(features_df)[0]
+                adjusted = adjust_for_inflation(base_price)
+                fair_min = adjusted * 0.9
+                fair_max = adjusted * 1.1
+                
+                # CORRECT INDEXING:
+                bid_amount = bid[7]  # bid_amount at index 7
+                is_fair = fair_min <= bid_amount <= fair_max
+                
+                enhanced_bids.append({
+                    'contract_name': contract_name,
+                    'company_name': bid[3] or 'N/A',  # company_name at index 3
+                    'cac_number': bid[4] or 'N/A',   # cac_number at index 4
+                    'bid_amount': bid_amount,
+                    'fair_min': fair_min,
+                    'fair_max': fair_max,
+                    'is_fair': is_fair,
+                    'status': bid[10],               # status at index 10
+                    'timestamp': bid[11],             # timestamp at index 11
+                    'email': bid[5]                   # email at index 5
+                })
+            except Exception as e:
+                print(f"Error processing bid {bid[0]}: {str(e)}")
+                enhanced_bids.append({
+                    'contract_name': f'Contract ID {contract_id} (Error)',
+                    'company_name': bid[3] or 'N/A',
+                    'cac_number': bid[4] or 'N/A',
+                    'bid_amount': bid[7],
+                    'fair_min': 0,
+                    'fair_max': 0,
+                    'is_fair': False,
+                    'status': bid[10],
+                    'timestamp': bid[11],
+                    'email': bid[5]
+                })
+        
+        # Build enhanced HTML dashboard (same as before)
+        admin_html = """..."""  # Keep your existing HTML template
+        return admin_html
+        
+    except HTTPException:
+        return RedirectResponse(url="/admin/login", status_code=303)
+
         
         # Prepare enhanced bid data with AI predictions
         enhanced_bids = []
@@ -652,6 +715,7 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
 
 
 
