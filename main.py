@@ -102,7 +102,7 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← REPLACE WITH YOUR GMAIL
-        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"  # ← GET FROM GOOGLE ACCOUNT SECURITY
+        EMAIL_PASSWORD = "Qwerasd@()34"  # ← GET FROM GOOGLE ACCOUNT SECURITY
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -253,19 +253,6 @@ def contracts(request: Request):
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
 
-@app.get("/contracts/{contract_id}", response_class=HTMLResponse)
-def contract_detail(request: Request, contract_id: int):
-    try:
-        user_id = get_current_user(request)
-        row = df_bidding.iloc[contract_id]
-        return templates.TemplateResponse("contract_detail.html", {
-            "request": request, 
-            "contract": row.to_dict(),
-            "user_id": user_id
-        })
-    except HTTPException:
-        return RedirectResponse(url="/login", status_code=303)
-
 # ===== BID SUBMISSION WITH VISIBLE SUCCESS & PERSISTENCE (CRITICAL FIX) =====
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
@@ -307,7 +294,7 @@ async def submit_bid(
         INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
-        conn.commit()  # ← THIS ENSURES BID IS SAVED TO DATABASE
+        conn.commit() 
         
         bid_id = cursor.lastrowid
         print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount:.2f}B")
@@ -430,9 +417,7 @@ def admin_dashboard(request: Request):
                    bid_amount, equipment_list, workforce, status, timestamp
             FROM bids 
             ORDER BY timestamp DESC
-        """)
-        bids = cursor.fetchall()
-        total_bids = len(bids)
+                total_bids = len(bids)
         print(f"✓✓✓ ADMIN DASHBOARD: Loaded {total_bids} bids from database")
         
         # Process bids with AI comparison
