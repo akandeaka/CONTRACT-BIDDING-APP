@@ -105,7 +105,7 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← REPLACE WITH YOUR GMAIL
-        EMAIL_PASSWORD = "YOUR_GMAIL_APP_PASSWORD"  # ← REPLACE WITH 16-CHAR APP PASSWORD
+        EMAIL_PASSWORD = "Qwerasd@()34"  # ← REPLACE WITH 16-CHAR APP PASSWORD
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -629,5 +629,3 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
-
-
