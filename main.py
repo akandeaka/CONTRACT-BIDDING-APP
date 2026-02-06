@@ -418,7 +418,6 @@ def admin_dashboard(request: Request):
                    bid_amount, equipment_list, workforce, status, timestamp
             FROM bids 
             ORDER BY timestamp DESC
-                total_bids = len(bids)
         print(f"✓✓✓ ADMIN DASHBOARD: Loaded {total_bids} bids from database")
         
         # Process bids with AI comparison
