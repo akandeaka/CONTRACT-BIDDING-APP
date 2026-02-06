@@ -292,6 +292,7 @@ async def submit_bid(
         # CRITICAL FIX: Save bid with explicit commit
         cursor.execute("""
         INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
+        conn.commit()
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
         conn.commit() 
