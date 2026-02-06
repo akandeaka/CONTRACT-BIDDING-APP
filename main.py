@@ -296,6 +296,7 @@ async def submit_bid(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
         conn.commit() 
+        
         bid_id = cursor.lastrowid
         print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount:.2f}B")
 
