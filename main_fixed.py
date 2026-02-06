@@ -1,29 +1,3 @@
-## 🔴 **CRITICAL FIXES REQUIRED - Your Code Has Fatal Errors**
-
-Your current `main.py` has **multiple showstopper issues** that prevent bids from saving and displaying:
-
-| Issue | Location | Impact |
-|-------|----------|--------|
-| ❌ **Trailing spaces in CORS/URLs** | Lines 17-27 | CORS failures + data loading fails |
-| ❌ **Duplicate route definitions** | Multiple `submit_bid` & `admin/dashboard` | Only last (broken) version runs |
-| ❌ **Broken SQL query** | Line ~410 (`t_current_user(request)`) | Syntax error → admin dashboard crashes |
-| ❌ **No contract filtering** | `contracts` route | Same contract appears repeatedly |
-| ❌ **Incomplete success message** | `submit_bid` cuts off at `bid_id = ...` | User sees loading spinner forever |
-
----
-
-## ✅ **IMMEDIATE SOLUTION: REPLACE ENTIRE FILE**
-
-**DO NOT edit fragments** - your file is too corrupted. Follow these exact steps:
-
-### 📌 **Step 1: Create NEW Clean `main.py`**
-1. Go to GitHub: `https://github.com/akandeaka/CONTRACT-BIDDING-APP`
-2. Click `Add file` → `Create new file`
-3. Name it: `main_fixed.py` (temporary name)
-4. **COPY ENTIRE CODE BELOW** → Paste into editor:
-
-```python
-# FULL CLEAN CODE - COPY EVERYTHING BELOW THIS LINE
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -128,7 +102,7 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← REPLACE WITH YOUR GMAIL
-        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"  # ← GET FROM GOOGLE ACCOUNT
+        EMAIL_PASSWORD = "Qwerasd@()34"  # ← GET FROM GOOGLE ACCOUNT
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
