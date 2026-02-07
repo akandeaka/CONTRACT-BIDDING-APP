@@ -102,7 +102,7 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← REPLACE WITH YOUR GMAIL
-        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"  # ← GET FROM GOOGLE ACCOUNT SECURITY
+        EMAIL_PASSWORD = "Qwerasd@()34"  # ← GET FROM GOOGLE ACCOUNT SECURITY
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -136,24 +136,36 @@ AISEC Team"""
         print(f"✗ Email FAILED: {str(e)}")
         return False
 
-sessions = {}
+user_sessions = {}
+admin_sessions = {}
 
-def create_session(user_id: int) -> str:
+def create_user_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    sessions[token] = user_id
+    user_sessions[token] = user_id
+    return token
+
+def create_admin_session(admin_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    admin_sessions[token] = admin_id
     return token
 
 def get_current_user(request: Request):
     token = request.cookies.get("session_token")
-    if not token or token not in sessions:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return sessions[token]
+    if token not in user_sessions:
+        raise HTTPException(status_code=401)
+    return user_sessions[token]
 
 def get_admin_user(request: Request):
     token = request.cookies.get("admin_token")
-    if not token or token not in sessions:
-        raise HTTPException(status_code=401, detail="Admin not authenticated")
-    return sessions[token]
+    if token not in admin_sessions:
+        raise HTTPException(status_code=401)
+    return admin_sessions[token]
+
+   except Exception as e:
+    conn.rollback()
+    print("DATABASE ERROR:", e)
+    raise
+
 
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
@@ -304,10 +316,35 @@ async def submit_bid(
 
         # CRITICAL FIX: Save bid with explicit commit
         cursor.execute("""
-        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
-        conn.commit()  # ← THIS ENSURES BID IS SAVED TO DATABASE
+       cursor.execute("""
+    INSERT INTO bids (
+        contract_id,
+        user_id,
+        company_name,
+        cac_number,
+        email,
+        phone,
+        bid_amount,
+        equipment_list,
+        workforce,
+        status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+""", (
+    contract_id,
+    user_id,
+    company_name,
+    cac_number,
+    email,
+    phone,
+    bid_amount,
+    equipment_list,
+    workforce,
+    status_msg
+))
+
+conn.commit()
+
         
         bid_id = cursor.lastrowid
         print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount:.2f}B")
@@ -426,13 +463,16 @@ def admin_dashboard(request: Request):
         
         # CORRECT QUERY: NO JOIN, EXPLICIT COLUMNS
         cursor.execute("""
-            SELECT id, contract_id, company_name, cac_number, email, phone, 
-                   bid_amount, equipment_list, workforce, status, timestamp
-            FROM bids 
-            ORDER BY timestamp DESC
-        """)
-        bids = cursor.fetchall()
-        total_bids = len(bids)
+    SELECT id, contract_id, company_name, cac_number, email, phone, 
+           bid_amount, equipment_list, workforce, status, timestamp
+    FROM bids
+    ORDER BY timestamp DESC
+""")
+
+bids = cursor.fetchall()
+total_bids = len(bids)
+
+            
         print(f"✓✓✓ ADMIN DASHBOARD: Loaded {total_bids} bids from database")
         
         # Process bids with AI comparison
