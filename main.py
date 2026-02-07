@@ -310,7 +310,7 @@ async def submit_bid(
         conn.commit()  # ← THIS ENSURES BID IS SAVED TO DATABASE
         
         bid_id = cursor.lastrowid
-        print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id}
+        print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount:.2f}B")
 
         # Send email notification (non-blocking)
         try:
