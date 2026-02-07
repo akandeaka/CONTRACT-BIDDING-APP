@@ -18,7 +18,7 @@ import re
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# CORS middleware (NO TRAILING SPACES)
+# CORS middleware (NO TRAILING SPACES - CRITICAL)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -31,7 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# URLs for datasets (NO TRAILING SPACES)
+# URLs for datasets (NO TRAILING SPACES - CRITICAL)
 TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
@@ -48,7 +48,7 @@ df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)
 df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
-# Database setup
+# Database setup (CORRECTED SCHEMA - NO FOREIGN KEY CONSTRAINT)
 conn = sqlite3.connect("bids.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -96,13 +96,13 @@ except sqlite3.IntegrityError:
 
 conn.commit()
 
-# Email function
+# Email function (UPDATE CREDENTIALS BEFORE DEPLOYING)
 def send_bid_notification(email, company_name, contract_name, status, bid_amount):
     try:
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← REPLACE WITH YOUR GMAIL
-        EMAIL_PASSWORD = "Qwerasd@()34"  # ← GET FROM GOOGLE ACCOUNT SECURITY
+        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"  # ← GET FROM GOOGLE ACCOUNT SECURITY
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -136,36 +136,24 @@ AISEC Team"""
         print(f"✗ Email FAILED: {str(e)}")
         return False
 
-user_sessions = {}
-admin_sessions = {}
+sessions = {}
 
-def create_user_session(user_id: int) -> str:
+def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    user_sessions[token] = user_id
-    return token
-
-def create_admin_session(admin_id: int) -> str:
-    token = secrets.token_urlsafe(32)
-    admin_sessions[token] = admin_id
+    sessions[token] = user_id
     return token
 
 def get_current_user(request: Request):
     token = request.cookies.get("session_token")
-    if token not in user_sessions:
-        raise HTTPException(status_code=401)
-    return user_sessions[token]
+    if not token or token not in sessions:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return sessions[token]
 
 def get_admin_user(request: Request):
     token = request.cookies.get("admin_token")
-    if token not in admin_sessions:
-        raise HTTPException(status_code=401)
-    return admin_sessions[token]
-
-   except Exception as e:
-    conn.rollback()
-    print("DATABASE ERROR:", e)
-    raise
-
+    if not token or token not in sessions:
+        raise HTTPException(status_code=401, detail="Admin not authenticated")
+    return sessions[token]
 
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
@@ -213,7 +201,7 @@ async def logout(response: Response):
     response.delete_cookie("session_token")
     return response
 
-# ===== CONTRACTS WITH FILTERING =====
+# ===== CONTRACTS WITH FILTERING (CRITICAL FIX) =====
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
     try:
@@ -278,7 +266,7 @@ def contract_detail(request: Request, contract_id: int):
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
 
-# ===== BID SUBMISSION WITH VISIBLE SUCCESS =====
+# ===== BID SUBMISSION WITH VISIBLE SUCCESS & PERSISTENCE (CRITICAL FIX) =====
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
     request: Request,
@@ -316,35 +304,10 @@ async def submit_bid(
 
         # CRITICAL FIX: Save bid with explicit commit
         cursor.execute("""
-       cursor.execute("""
-    INSERT INTO bids (
-        contract_id,
-        user_id,
-        company_name,
-        cac_number,
-        email,
-        phone,
-        bid_amount,
-        equipment_list,
-        workforce,
-        status
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-""", (
-    contract_id,
-    user_id,
-    company_name,
-    cac_number,
-    email,
-    phone,
-    bid_amount,
-    equipment_list,
-    workforce,
-    status_msg
-))
-
-conn.commit()
-
+        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
+        conn.commit()  # ← THIS ENSURES BID IS SAVED TO DATABASE
         
         bid_id = cursor.lastrowid
         print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount:.2f}B")
@@ -357,7 +320,7 @@ conn.commit()
             print(f"⚠️ Email failed (bid saved): {str(e)}")
             email_status = "<p style='color:#f59e0b;font-weight:600;margin:15px 0;font-size:18px'>⚠️ Bid saved (email failed)</p>"
 
-        # VISIBLE SUCCESS MESSAGE
+        # VISIBLE SUCCESS MESSAGE (USER WILL SEE THIS IMMEDIATELY)
         return f"""
         <div style='max-width:750px;margin:30px auto;background:linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);border:3px solid #10b981;border-radius:20px;padding:30px;text-align:center;box-shadow:0 10px 30px rgba(16, 185, 129, 0.25);animation:fadeIn 0.6s'>
             <style>@keyframes fadeIn {{ from {{ opacity:0; transform: translateY(20px); }} to {{ opacity:1; transform: translateY(0); }} }}</style>
@@ -422,7 +385,7 @@ conn.commit()
         </div>
         """
 
-# ===== ADMIN ROUTES =====
+# ===== ADMIN ROUTES (SINGLE DEFINITION) =====
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page(request: Request):
     return """
@@ -463,16 +426,13 @@ def admin_dashboard(request: Request):
         
         # CORRECT QUERY: NO JOIN, EXPLICIT COLUMNS
         cursor.execute("""
-    SELECT id, contract_id, company_name, cac_number, email, phone, 
-           bid_amount, equipment_list, workforce, status, timestamp
-    FROM bids
-    ORDER BY timestamp DESC
-""")
-
-bids = cursor.fetchall()
-total_bids = len(bids)
-
-            
+            SELECT id, contract_id, company_name, cac_number, email, phone, 
+                   bid_amount, equipment_list, workforce, status, timestamp
+            FROM bids 
+            ORDER BY timestamp DESC
+        """)
+        bids = cursor.fetchall()
+        total_bids = len(bids)
         print(f"✓✓✓ ADMIN DASHBOARD: Loaded {total_bids} bids from database")
         
         # Process bids with AI comparison
@@ -526,7 +486,7 @@ total_bids = len(bids)
                     'bid_id': bid[0]
                 })
         
-        # Build dashboard HTML (CSS colors properly escaped)
+        # Build dashboard HTML (CSS colors properly escaped with single quotes)
         admin_html = f'''<!DOCTYPE html>
 <html>
 <head>
