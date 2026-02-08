@@ -167,7 +167,6 @@ AISEC Team"""
         print(f"✗ Email FAILED: {str(e)}")
         return False
 
-sessions = {}
 
 def create_user_session(user_id)
 
