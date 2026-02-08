@@ -53,37 +53,6 @@ conn = sqlite3.connect("bids.db", check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
-    INSERT INTO bids (
-        contract_id,
-        user_id,
-        company_name,
-        cac_number,
-        email,
-        phone,
-        bid_amount,
-        equipment_list,
-        workforce,
-        status
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-""", (
-    contract_id,
-    user_id,
-    company_name,
-    cac_number,
-    email,
-    phone,
-    bid_amount,
-    equipment_list,
-    workforce,
-    status_msg
-))
-
-conn.commit()
-bid_id = cursor.lastrowid
-conn.close()
-
-cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
@@ -133,7 +102,7 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← REPLACE WITH YOUR GMAIL
-        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"  # ← GET FROM GOOGLE ACCOUNT SECURITY
+        EMAIL_PASSWORD = "Qwerasd@()34"  # ← GET FROM GOOGLE ACCOUNT SECURITY
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -167,9 +136,9 @@ AISEC Team"""
         print(f"✗ Email FAILED: {str(e)}")
         return False
 
+sessions = {}
 
-def create_user_session(user_id)
-
+def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     sessions[token] = user_id
     return token
@@ -180,7 +149,7 @@ def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     return sessions[token]
 
-def create_admin_session(admin_id)
+def get_admin_user(request: Request):
     token = request.cookies.get("admin_token")
     if not token or token not in sessions:
         raise HTTPException(status_code=401, detail="Admin not authenticated")
@@ -456,18 +425,14 @@ def admin_dashboard(request: Request):
         admin_id = get_admin_user(request)
         
         # CORRECT QUERY: NO JOIN, EXPLICIT COLUMNS
-        conn = sqlite3.connect("bids.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-    SELECT id, contract_id, company_name, cac_number, email, phone,
-           bid_amount, equipment_list, workforce, status, timestamp
-    FROM bids
-    ORDER BY timestamp DESC
-""")
-
-bids = cursor.fetchall()
-conn.close()
+        cursor.execute("""
+            SELECT id, contract_id, company_name, cac_number, email, phone, 
+                   bid_amount, equipment_list, workforce, status, timestamp
+            FROM bids 
+            ORDER BY timestamp DESC
+        """)
+        bids = cursor.fetchall()
+        total_bids = len(bids)
         print(f"✓✓✓ ADMIN DASHBOARD: Loaded {total_bids} bids from database")
         
         # Process bids with AI comparison
@@ -521,7 +486,7 @@ conn.close()
                     'bid_id': bid[0]
                 })
         
-        # Build dashboard HTML (CSS colors properly escaped with single quotes)
+        # Build dashboard HTML
         admin_html = f'''<!DOCTYPE html>
 <html>
 <head>
