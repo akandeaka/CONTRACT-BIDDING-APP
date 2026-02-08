@@ -243,6 +243,35 @@ h1{color:#065f46;} .info{background:#ecfdf5;padding:1.5rem;border-radius:12px;ma
 # ────────────────────────────────────────────────
 # ROUTES
 # ────────────────────────────────────────────────
+from fastapi.responses import RedirectResponse
+from starlette.status import HTTP_303_SEE_OTHER   # ← import this
+
+@app.post("/login", response_class=HTMLResponse)
+@limiter.limit("10/minute")   # if you have rate limiting
+async def login_user(
+    response: Response,
+    email: str = Form(...),
+    password: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    # ... your existing verification logic ...
+
+    if user and pwd_context.verify(password, user["hashed_password"]):
+        token = create_access_token(str(user["id"]))
+        resp = RedirectResponse(url="/contracts", status_code=HTTP_303_SEE_OTHER)
+        #               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #               This is the key change
+
+        resp.set_cookie(
+            key="session_token",
+            value=token,
+            httponly=True,
+            secure= True,               # must be True in production on Render (HTTPS)
+            samesite="lax",
+            max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600
+        )
+        return resp
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -498,3 +527,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
