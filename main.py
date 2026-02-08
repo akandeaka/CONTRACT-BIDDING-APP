@@ -18,6 +18,18 @@ from email.mime.multipart import MIMEMultipart
 # ────────────────────────────────────────────────
 
 app = FastAPI(title="AISEC – AI Secure Contracting Platform")
+# imports ...
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+app = FastAPI(...)
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# then your routes
 
 # Change these in production (use .env!)
 JWT_SECRET = "super-secret-jwt-key-change-this-in-production-2026-at-least-64-chars"
@@ -527,4 +539,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
