@@ -6,15 +6,8 @@ joblib
 Jinja2
 python-multipart
 python-jose[cryptography]
-passlib[bcrypt]
 requests
 python-dotenv
-passlib[bcrypt]
 PyJWT
-# before (probably had one of these)
-# passlib[bcrypt]
-# bcrypt
-
-# after – explicit versions
 passlib==1.7.4
-bcrypt==4.2.1   # or bcrypt==4.3.0 – both safe as of early 2026
+bcrypt==4.2.1 
