@@ -46,6 +46,18 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
     finally:
         conn.close()
 # then your routes
+from fastapi import Request, Form, Depends
+
+@app.post("/login")
+@limiter.limit("10/minute")
+async def login_user(
+    request: Request,                     # ← added here
+    email: str = Form(...),
+    password: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    # your existing login logic
+    ...
 
 # Change these in production (use .env!)
 JWT_SECRET = "super-secret-jwt-key-change-this-in-production-2026-at-least-64-chars"
@@ -555,6 +567,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
