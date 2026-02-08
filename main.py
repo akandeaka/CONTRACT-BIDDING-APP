@@ -13,6 +13,191 @@ from fastapi import (
     Response,
     Depends,
 )
+from fastapi import (
+    FastAPI,
+    Request,
+    Form,
+    HTTPException,
+    Response,
+    Depends,
+)
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import HTTPBearer  # optional – only if you later add token auth
+import sqlite3
+from passlib.context import CryptContext
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# ────────────────────────────────────────────────
+# Global objects (should be defined near top of file)
+# ────────────────────────────────────────────────
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, lambda req, exc: HTMLResponse(
+    "<h2>Too many attempts. Please try again later.</h2>",
+    status_code=429
+))
+
+def get_db():
+    conn = sqlite3.connect("bids.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+# ────────────────────────────────────────────────
+# REGISTER endpoint
+# ────────────────────────────────────────────────
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page():
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Register - AISEC</title></head>
+    <body style="font-family:sans-serif; background:#f8f9fa; margin:0; padding:40px;">
+        <div style="max-width:420px; margin:auto; background:white; padding:32px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.12);">
+            <h2 style="text-align:center; color:#1d4ed8;">Create Account</h2>
+            <form method="post" style="display:flex; flex-direction:column; gap:16px; margin-top:24px;">
+                <input name="company_name" placeholder="Company Name" required style="padding:12px; border:1px solid #ced4da; border-radius:6px;">
+                <input name="cac_number" placeholder="CAC Number" required style="padding:12px; border:1px solid #ced4da; border-radius:6px;">
+                <input type="email" name="email" placeholder="Email" required style="padding:12px; border:1px solid #ced4da; border-radius:6px;">
+                <input type="password" name="password" placeholder="Password" required style="padding:12px; border:1px solid #ced4da; border-radius:6px;">
+                <button type="submit" style="padding:12px; background:#198754; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
+                    Register
+                </button>
+            </form>
+            <p style="text-align:center; margin-top:20px;">
+                Already have an account? <a href="/login" style="color:#0d6efd;">Login</a>
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.post("/register", response_class=HTMLResponse)
+@limiter.limit("5/minute")
+async def register(
+    request: Request,                       # ← required for slowapi
+    company_name: str = Form(...),
+    cac_number: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    email = email.strip().lower()
+    company_name = company_name.strip()
+    cac_number = cac_number.strip()
+
+    if len(password) < 8:
+        return HTMLResponse(
+            register_page() + '<p style="color:red; text-align:center;">Password must be at least 8 characters</p>',
+            status_code=400
+        )
+
+    hashed = pwd_context.hash(password)
+
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO users (email, hashed_password, company_name, cac_number)
+            VALUES (?, ?, ?, ?)
+            """,
+            (email, hashed, company_name, cac_number)
+        )
+        db.commit()
+        return HTMLResponse(
+            """
+            <h2 style="color:#198754; text-align:center; margin-top:120px;">
+                Account created successfully!<br>
+                <a href="/login" style="color:#0d6efd;">→ Go to login</a>
+            </h2>
+            """
+        )
+    except sqlite3.IntegrityError:
+        return HTMLResponse(
+            register_page() + '<p style="color:red; text-align:center;">Email already registered</p>',
+            status_code=409
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Database error: {str(e)}")
+
+
+# ────────────────────────────────────────────────
+# LOGIN endpoint
+# ────────────────────────────────────────────────
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page():
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Login - AISEC</title></head>
+    <body style="font-family:sans-serif; background:#f8f9fa; margin:0; padding:40px;">
+        <div style="max-width:400px; margin:auto; background:white; padding:32px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.12);">
+            <h2 style="text-align:center; color:#1d4ed8;">Sign In</h2>
+            <form method="post" style="display:flex; flex-direction:column; gap:16px; margin-top:24px;">
+                <input type="email" name="email" placeholder="Email" required style="padding:12px; border:1px solid #ced4da; border-radius:6px;">
+                <input type="password" name="password" placeholder="Password" required style="padding:12px; border:1px solid #ced4da; border-radius:6px;">
+                <button type="submit" style="padding:12px; background:#0d6efd; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
+                    Login
+                </button>
+            </form>
+            <p style="text-align:center; margin-top:20px;">
+                Don't have an account? <a href="/register" style="color:#198754;">Register</a>
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.post("/login", response_class=HTMLResponse)
+@limiter.limit("10/minute")
+async def login_user(
+    request: Request,                       # ← required for slowapi rate limiting
+    email: str = Form(...),
+    password: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    email = email.strip().lower()
+
+    cursor = db.cursor()
+    cursor.execute(
+        "SELECT id, hashed_password FROM users WHERE email = ?",
+        (email,)
+    )
+    user = cursor.fetchone()
+
+    if not user or not pwd_context.verify(password, user["hashed_password"]):
+        return HTMLResponse(
+            login_page() + '<p style="color:red; text-align:center; margin-top:16px;">Invalid email or password</p>',
+            status_code=401
+        )
+
+    # Create JWT or session token (adjust according to your auth system)
+    token = create_access_token(str(user["id"]))   # ← your token function
+
+    response = RedirectResponse(url="/contracts", status_code=303)
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        secure=True,                # important on Render (HTTPS)
+        samesite="lax",
+        max_age=24 * 60 * 60        # 24 hours
+    )
+
+    return response
+
+
+
 from fastapi.responses import HTMLResponse, RedirectResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -574,6 +759,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
