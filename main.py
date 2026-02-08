@@ -31,6 +31,20 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+import sqlite3
+from contextlib import contextmanager
+from typing import Generator
+from fastapi import Depends
+
+@contextmanager
+def get_db() -> Generator[sqlite3.Connection, None, None]:
+    """Provide a database connection per request and close it afterwards"""
+    conn = sqlite3.connect("bids.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row  # optional: makes rows dict-like
+    try:
+        yield conn
+    finally:
+        conn.close()
 # then your routes
 
 # Change these in production (use .env!)
@@ -541,6 +555,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
