@@ -23,7 +23,9 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-app = FastAPI(...)
+
+# Option C – minimal with title
+app = FastAPI(title="Contract Bidding App")
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -539,5 +541,6 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
