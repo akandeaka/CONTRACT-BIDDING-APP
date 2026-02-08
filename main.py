@@ -5,7 +5,14 @@ from typing import Optional
 
 import jwt
 import pandas as pd
-from fastapi import FastAPI, Request,Form, HTTPException,Response,Depends,HTTPException
+from fastapi import (
+    FastAPI,
+    Request,
+    Form,
+    HTTPException,
+    Response,
+    Depends,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -567,6 +574,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
