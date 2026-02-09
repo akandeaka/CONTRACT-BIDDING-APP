@@ -111,12 +111,55 @@ def init_db():
             pass
 
 init_db()
+def init_db():
+    with sqlite3.connect("bids.db") as conn:
+        c = conn.cursor()
+        # ... existing tables ...
 
+        # Update bids table to store AI prediction
+        c.execute('''CREATE TABLE IF NOT EXISTS bids (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contract_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            company_name TEXT NOT NULL,
+            cac_number TEXT NOT NULL,
+            email TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            bid_amount REAL NOT NULL,
+            equipment_list TEXT NOT NULL,
+            workforce TEXT NOT NULL,
+            status TEXT NOT NULL,
+            predicted_min REAL,          -- NEW
+            predicted_max REAL,          -- NEW
+            submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )''')
+
+        # ... admins table ...
 # ────────────────────────────────────────────────
 # Load real contracts from Google Sheet
 # ────────────────────────────────────────────────
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
-
+try:
+    df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
+    
+    # DEBUG: Show what was loaded
+    print("=== DEBUG: Google Sheet Loaded Successfully ===")
+    print("Number of contracts:", len(df_bidding))
+    print("Column names:", list(df_bidding.columns))
+    if not df_bidding.empty:
+        print("First row sample:", df_bidding.iloc[0].to_dict())
+    else:
+        print("WARNING: Sheet is empty!")
+        
+    # Ensure fallback columns
+    required = ["project_name", "description", "latitude", "longitude", "terrain_type", "estimated_length_km"]
+    for col in required:
+        if col not in df_bidding.columns:
+            print(f"WARNING: Column '{col}' missing – adding as N/A")
+            df_bidding[col] = "N/A"
+except Exception as e:
+    print(f"ERROR loading sheet: {e}")
+    df_bidding = pd.DataFrame(columns=required)
 try:
     df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
     required = ["project_name", "description", "latitude", "longitude", "terrain_type", "estimated_length_km"]
@@ -288,33 +331,74 @@ async def bid_form(request: Request, contract_id: int):
 
 @app.post("/bid/{contract_id}", response_class=HTMLResponse)
 @limiter.limit("3/hour")
-async def submit_bid(request: Request, contract_id: int,
-                     company_name: str = Form(...), cac_number: str = Form(...),
-                     email: str = Form(...), phone: str = Form(...),
-                     bid_amount: float = Form(...),
-                     equipment_list: str = Form(...), workforce: str = Form(...),
-                     db: sqlite3.Connection = Depends(get_db)):
+async def submit_bid(
+    request: Request,
+    contract_id: int,
+    company_name: str = Form(...),
+    cac_number: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(...),
+    bid_amount: float = Form(...),
+    equipment_list: str = Form(...),
+    workforce: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
     user_id = get_current_user_id(request)
+
     if contract_id < 0 or contract_id >= len(df_bidding):
         raise HTTPException(404, "Contract not found")
+
     if bid_amount <= 0:
         raise HTTPException(400, "Bid amount must be positive")
 
-    status, _, _ = is_fair_bid(bid_amount)
+    # Calculate AI fair range (this is stored for admin only)
+    status, min_fair, max_fair = is_fair_bid(bid_amount)
 
     cursor = db.cursor()
-    cursor.execute("""
-        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone,
-                          bid_amount, equipment_list, workforce, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (contract_id, user_id, company_name.strip(), cac_number.strip(),
-          email.strip(), phone.strip(), bid_amount,
-          equipment_list.strip(), workforce.strip(), status))
-    db.commit()
+    try:
+        cursor.execute("""
+            INSERT INTO bids (
+                contract_id, user_id, company_name, cac_number, email, phone,
+                bid_amount, equipment_list, workforce, status,
+                predicted_min, predicted_max
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            contract_id, user_id, company_name.strip(), cac_number.strip(),
+            email.strip(), phone.strip(), bid_amount,
+            equipment_list.strip(), workforce.strip(), status,
+            min_fair, max_fair
+        ))
+        db.commit()
 
-    project_name = df_bidding.iloc[contract_id].get("project_name", "Unknown project")
+        project_name = df_bidding.iloc[contract_id].get("project_name", "Unknown project")
 
-    return HTMLResponse(f"""
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><title>Bid Submitted</title>
+        <style>
+            body {{font-family:Arial,sans-serif; background:#f0fdf4; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0;}}
+            .card {{background:white; padding:3rem; border-radius:16px; box-shadow:0 10px 30px rgba(16,185,129,0.25); max-width:600px; text-align:center;}}
+            h1 {{color:#065f46;}}
+            .btn {{display:inline-block; padding:14px 32px; background:#1e40af; color:white; border-radius:8px; text-decoration:none; font-weight:bold; margin-top:2rem;}}
+        </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>✓ Bid Submitted Successfully</h1>
+            <p>Your bid for <strong>{project_name}</strong> of <strong>₦{bid_amount:,.2f} Billion</strong> has been received.</p>
+            <p>We will review it shortly.</p>
+            <a href="/contracts" class="btn">Back to Contracts</a>
+          </div>
+        </body>
+        </html>
+        """)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bid submission failed: {str(e)}")
+
+    
     <!DOCTYPE html><html><head><title>Success</title>
     <style>body{{font-family:Arial;background:#f0fdf4;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}}
     .card{{background:white;padding:3rem;border-radius:16px;box-shadow:0 10px 30px rgba(16,185,129,0.25);max-width:600px;text-align:center;}}
@@ -443,3 +527,4 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
