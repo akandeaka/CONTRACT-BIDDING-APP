@@ -231,9 +231,9 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
         if idx not in already_bid:
             available.append({
                 "id": idx,
-                "project_name": row.get("project_name", f"Contract {idx}"),
-                "description": row.get("description", "No description available"),
-                "location": f"Lat: {row.get('latitude','N/A')}, Lon: {row.get('longitude','N/A')}",
+                "project_name": row.get("Project_name", f"Contract {idx}"),
+                "description": row.get("Description", "No description available"),
+                "location": f"Lat: {row.get('latitude', 'N/A')}, Lon: {row.get('longitude', 'N/A')}",
                 "terrain": row.get("terrain_type", "N/A"),
                 "length_km": row.get("estimated_length_km", "N/A"),
             })
@@ -374,13 +374,22 @@ async def admin_login(username: str = Form(...), password: str = Form(...),
     cursor = db.cursor()
     cursor.execute("SELECT id, hashed_password FROM admins WHERE username = ?", (username,))
     admin = cursor.fetchone()
+
     if not admin or not pwd_context.verify(password, admin["hashed_password"]):
-        return HTMLResponse(admin_login_page() + '<p style="color:red;text-align:center;">Invalid credentials</p>', status_code=401)
+        error_html = '<p style="color:red; text-align:center; margin-top:1.5rem;">Invalid username or password</p>'
+        return HTMLResponse((await admin_login_page()) + error_html, status_code=401)
 
     token = create_access_token(str(admin["id"]))
+
     resp = RedirectResponse("/admin/dashboard", status_code=303)
-    resp.set_cookie(key="admin_token", value=token, httponly=True, secure=True, samesite="lax",
-                    max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
+    resp.set_cookie(
+        key="admin_token",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600
+    )
     return resp
 
 @app.get("/admin/dashboard", response_class=HTMLResponse)
@@ -398,7 +407,7 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 
     rows = ""
     for b in bids:
-        project_name = df_bidding.iloc[b["contract_id"]].get("project_name", f"Contract {b['contract_id']}")
+        project_name = df_bidding.iloc[b["contract_id"]].get("Project_name", f"Contract {b['contract_id']}")
         status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#d97706"
 
         rows += f"""
@@ -468,4 +477,5 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
