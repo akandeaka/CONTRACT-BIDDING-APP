@@ -398,17 +398,16 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 
     cursor = db.cursor()
     cursor.execute("""
-        SELECT id, contract_id, company_name, bid_amount, status, submitted_at,
-               predicted_min, predicted_max
+        SELECT id, contract_id, company_name, bid_amount, status, submitted_at
         FROM bids
         ORDER BY submitted_at DESC
     """)
     bids = cursor.fetchall()
 
     rows = ""
-    for b in bids:
-        project_name = df_bidding.iloc[b["contract_id"]].get("Project_name", f"Contract {b['contract_id']}")
-        status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#d97706"
+    for b in bids:   # ← THIS IS THE LOOP YOU ARE LOOKING FOR
+        project_name = df_bidding.iloc[b["contract_id"]].get("project_name", f"Contract {b['contract_id']}")
+        status_color = "#10b981" if b["status"] == "Approved" else "#ef4444"
 
         rows += f"""
         <tr>
@@ -419,7 +418,6 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             <td style="color:{status_color};">{b['status']}</td>
             <td>{b['submitted_at']}</td>
             <td>
-                <strong>AI Fair Range:</strong> ₦{b.get('predicted_min', 'N/A'):.2f}B – ₦{b.get('predicted_max', 'N/A'):.2f}B<br>
                 <form action="/admin/update-bid/{b['id']}" method="post" style="display:inline;">
                     <input type="hidden" name="new_status" value="Approved">
                     <button style="background:#10b981;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;">Approve</button>
@@ -450,7 +448,7 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
         <h1>Admin Dashboard – All Bids</h1>
         <a href="/admin/logout" class="logout">Logout</a>
         <table>
-            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>Status</th><th>Date</th><th>AI Fair Range & Action</th></tr>
+            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>Status</th><th>Date</th><th>Action</th></tr>
             {rows}
         </table>
     </body>
@@ -477,5 +475,6 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
