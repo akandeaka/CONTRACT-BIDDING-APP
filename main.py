@@ -312,6 +312,7 @@ async def admin_login_page():
     </body>
     </html>
     """
+    
     @app.post("/admin/login", response_class=HTMLResponse)
 async def admin_login(
     username: str = Form(...),
@@ -638,6 +639,7 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
