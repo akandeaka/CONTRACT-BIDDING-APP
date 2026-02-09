@@ -241,6 +241,7 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
                 "location": f"Lat: {row.get('latitude','N/A')}, Lon: {row.get('longitude','N/A')}",
                 "terrain": row.get("terrain_type", "N/A"),
                 "length_km": row.get("estimated_length_km", "N/A"),
+                "Duration": row.get("months", "N/A"),
             })
 
     if not available:
@@ -438,4 +439,5 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
