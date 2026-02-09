@@ -313,7 +313,7 @@ async def admin_login_page():
     </html>
     """
     
-    @app.post("/admin/login", response_class=HTMLResponse)
+   @app.post("/admin/login", response_class=HTMLResponse)
 async def admin_login(
     username: str = Form(...),
     password: str = Form(...),
@@ -341,6 +341,7 @@ async def admin_login(
         max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600
     )
     return resp
+    
 
     @app.get("/admin/dashboard", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
@@ -639,6 +640,7 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
