@@ -371,45 +371,7 @@ async def admin_login(username: str = Form(...), password: str = Form(...),
                     max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
     return resp
 
-@app.get("/admin/dashboard", response_class=HTMLResponse)
-async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
-    get_current_admin_id(request)
 
-    cursor = db.cursor()
-    cursor.execute("""
-        SELECT b.id, b.contract_id, b.company_name, b.bid_amount, b.status, b.submitted_at,
-               COALESCE(df.project_name, 'Contract ' || b.contract_id) as project_name
-        FROM bids b
-        LEFT JOIN (SELECT ROW_NUMBER() OVER () - 1 as contract_id, project_name FROM df_bidding) df
-               ON b.contract_id = df.contract_id
-        ORDER BY b.submitted_at DESC
-    """)
-    bids = cursor.fetchall()
-
-    rows = ""
-    for b in bids:
-        rows += f"""
-        <tr>
-            <td>#{b['id']}</td>
-            <td>{b['project_name']}</td>
-            <td>{b['company_name']}</td>
-            <td>₦{b['bid_amount']:,.2f}B</td>
-            <td>{b['status']}</td>
-            <td>{b['submitted_at']}</td>
-            <td>
-                <form action="/admin/update-bid/{b['id']}" method="post" style="display:inline;">
-                    <input type="hidden" name="new_status" value="Approved">
-                    <button style="background:#10b981;color:white;border:none;padding:6px 12px;border-radius:4px;">Approve</button>
-                </form>
-                <form action="/admin/update-bid/{b['id']}" method="post" style="display:inline;">
-                    <input type="hidden" name="new_status" value="Rejected">
-                    <button style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:4px;">Reject</button>
-                </form>
-            </td>
-        </tr>
-        """
-
-    return HTMLResponse(f"""
     <!DOCTYPE html><html><head><title>Admin Dashboard</title>
     <style>body{{font-family:Arial;background:#f8fafc;padding:2rem;}} table{{width:100%;border-collapse:collapse;background:white;}}
     th,td{{padding:12px;text-align:left;border-bottom:1px solid #e2e8f0;}} th{{background:#eff6ff;}}</style></head>
@@ -418,7 +380,73 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
     <table><tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>Status</th><th>Date</th><th>Action</th></tr>
     {rows}</table></body></html>
     """)
+@app.get("/admin/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
+    get_current_admin_id(request)
 
+    cursor = db.cursor()
+    cursor.execute("""
+        SELECT id, contract_id, company_name, bid_amount, status, submitted_at
+        FROM bids
+        ORDER BY submitted_at DESC
+    """)
+    bids = cursor.fetchall()
+
+    rows = ""
+    for b in bids:
+        # Look up project name from DataFrame using contract_id
+        project_name = df_bidding.iloc[b["contract_id"]]["project_name"] \
+            if 0 <= b["contract_id"] < len(df_bidding) \
+            else f"Contract {b['contract_id']}"
+
+        status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#d97706"
+
+        rows += f"""
+        <tr>
+            <td>#{b['id']}</td>
+            <td>{project_name}</td>
+            <td>{b['company_name']}</td>
+            <td>₦{b['bid_amount']:,.2f}B</td>
+            <td style="color:{status_color};">{b['status']}</td>
+            <td>{b['submitted_at']}</td>
+            <td>
+                <form action="/admin/update-bid/{b['id']}" method="post" style="display:inline;">
+                    <input type="hidden" name="new_status" value="Approved">
+                    <button style="background:#10b981;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;">Approve</button>
+                </form>
+                <form action="/admin/update-bid/{b['id']}" method="post" style="display:inline;">
+                    <input type="hidden" name="new_status" value="Rejected">
+                    <button style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;">Reject</button>
+                </form>
+            </td>
+        </tr>
+        """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><title>Admin Dashboard - AISEC</title>
+    <style>
+        body {{font-family:Arial,sans-serif; background:#f8fafc; margin:0; padding:2rem;}}
+        h1 {{color:#1e40af; text-align:center;}}
+        table {{width:100%; border-collapse:collapse; background:white; box-shadow:0 4px 12px rgba(0,0,0,0.1);}}
+        th, td {{padding:14px; text-align:left; border-bottom:1px solid #e2e8f0;}}
+        th {{background:#eff6ff;}}
+        .logout {{float:right; color:#ef4444; text-decoration:none; font-weight:bold;}}
+    </style>
+    </head>
+    <body>
+        <h1>Admin Dashboard – All Bids</h1>
+        <a href="/admin/logout" class="logout">Logout</a>
+        <table>
+            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>Status</th><th>Date</th><th>Action</th></tr>
+            {rows}
+        </table>
+    </body>
+    </html>
+    """
+    return HTMLResponse(html)
+    
 @app.post("/admin/update-bid/{bid_id}")
 async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
                             db: sqlite3.Connection = Depends(get_db)):
@@ -439,5 +467,6 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
