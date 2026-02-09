@@ -433,25 +433,34 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
         </tr>
         """
 
-    return HTMLResponse(f"""
+       return HTMLResponse(f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Admin Dashboard - AISEC</title>
         <style>
-            body {{font-family:Arial,sans-serif; background:#f8fafc; margin:0; padding:2rem;}}
-            h1 {{color:#1e40af; text-align:center;}}
-            table {{width:100%; border-collapse:collapse; background:white; box-shadow:0 4px 12px rgba(0,0,0,0.1);}}
-            th, td {{padding:14px; text-align:left; border-bottom:1px solid #e2e8f0;}}
-            th {{background:#eff6ff;}}
-            .logout {{float:right; color:#ef4444; text-decoration:none; font-weight:bold;}}
+            body {{ font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 2rem; }}
+            h1 {{ color: #1e40af; text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }}
+            th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
+            th {{ background: #eff6ff; }}
+            .logout {{ float: right; color: #ef4444; text-decoration: none; font-weight: bold; }}
+            button {{ padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; }}
         </style>
     </head>
     <body>
         <h1>Admin Dashboard – All Bids</h1>
         <a href="/admin/logout" class="logout">Logout</a>
         <table>
-            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>Status</th><th>Date</th><th>Action</th></tr>
+            <tr>
+                <th>ID</th>
+                <th>Project</th>
+                <th>Company</th>
+                <th>Bid Amount</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Action</th>
+            </tr>
             {rows}
         </table>
     </body>
@@ -466,6 +475,7 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
