@@ -302,9 +302,12 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
 
 # ── Bid submission ───────────────────────────────
 
+# ── Bid form (GET) ──────────────────────────────────────────────────────────────
+
 @app.get("/bid/{contract_id}", response_class=HTMLResponse)
 async def bid_form(request: Request, contract_id: int):
-    get_current_user_id(request)  # auth check
+    # Just check authentication (no db needed here)
+    get_current_user_id(request)
 
     if contract_id < 0 or contract_id >= len(df_bidding):
         raise HTTPException(404, "Contract not found")
@@ -314,12 +317,17 @@ async def bid_form(request: Request, contract_id: int):
     return HTMLResponse(f"""
     <!DOCTYPE html>
     <html lang="en">
-    <head><meta charset="UTF-8"><title>Bid on {project}</title>
-    <style>body{{font-family:Arial;background:#f0f4f8;padding:2rem;}}
-    .card{{background:white;max-width:600px;margin:auto;padding:2.5rem;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,0.1);}}
-    label{{display:block;margin:1.2rem 0 0.5rem;font-weight:600;}} input,textarea{{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;}}
-    button{{margin-top:2rem;width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:8px;font-size:1.1rem;cursor:pointer;}}
-    </style></head>
+    <head>
+      <meta charset="UTF-8">
+      <title>Bid on {project}</title>
+      <style>
+        body {{font-family:Arial,sans-serif; background:#f0f4f8; padding:2rem; margin:0;}}
+        .card {{background:white; max-width:600px; margin:auto; padding:2.5rem; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.1);}}
+        label {{display:block; margin:1.2rem 0 0.5rem; font-weight:600;}}
+        input, textarea {{width:100%; padding:12px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;}}
+        button {{margin-top:2rem; width:100%; padding:14px; background:#10b981; color:white; border:none; border-radius:8px; font-size:1.1rem; cursor:pointer;}}
+      </style>
+    </head>
     <body>
       <div class="card">
         <h2>Bid for: {project}</h2>
@@ -328,14 +336,18 @@ async def bid_form(request: Request, contract_id: int):
           <label>CAC Number</label><input name="cac_number" required>
           <label>Email</label><input type="email" name="email" required>
           <label>Phone</label><input name="phone" required>
-          <label>Bid Amount (₦ Billion)</label><input type="number" step="0.01" name="bid_amount" min="0.01" required>
+          <label>Bid Amount (₦ Billion)</label><input type="number" step="0.01" min="0.01" name="bid_amount" required>
           <label>Equipment List</label><textarea name="equipment_list" rows="4" required></textarea>
           <label>Workforce Description</label><textarea name="workforce" rows="4" required></textarea>
           <button type="submit">Submit Bid</button>
         </form>
       </div>
-    </body></html>
+    </body>
+    </html>
     """)
+
+
+# ── Submit bid (POST) ───────────────────────────────────────────────────────────
 
 @app.post("/bid/{contract_id}", response_class=HTMLResponse)
 @limiter.limit("3/hour")
@@ -348,7 +360,8 @@ async def submit_bid(
     phone: str = Form(...),
     bid_amount: float = Form(...),
     equipment_list: str = Form(...),
-    workforce: str = Form(...)
+    workforce: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)   # ← correct dependency injection
 ):
     user_id = get_current_user_id(request)
 
@@ -360,30 +373,51 @@ async def submit_bid(
 
     status, min_b, max_b = is_fair_bid(bid_amount)
 
-    db = next(get_db())
     cursor = db.cursor()
-    cursor.execute("""
-        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (contract_id, user_id, company_name.strip(), cac_number.strip(), email.strip(), phone.strip(),
-          bid_amount, equipment_list.strip(), workforce.strip(), status))
-    db.commit()
+    try:
+        cursor.execute("""
+            INSERT INTO bids (
+                contract_id, user_id, company_name, cac_number, email, phone,
+                bid_amount, equipment_list, workforce, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            contract_id, user_id, company_name.strip(), cac_number.strip(),
+            email.strip(), phone.strip(), bid_amount,
+            equipment_list.strip(), workforce.strip(), status
+        ))
+        db.commit()
 
-    project_name = df_bidding.iloc[contract_id].get("project_name", "Unknown project")
+        project_name = df_bidding.iloc[contract_id].get("project_name", "Unknown project")
 
-    return HTMLResponse(f"""
-    <h1 style="color:#10b981;text-align:center;margin-top:80px;">Bid Submitted Successfully</h1>
-    <div style="max-width:600px;margin:auto;padding:2rem;background:#f0fdf4;border-radius:12px;">
-      <p><strong>Project:</strong> {project_name}</p>
-      <p><strong>Bid Amount:</strong> ₦{bid_amount:,.2f} Billion</p>
-      <p><strong>Status:</strong> {status}</p>
-      <p><strong>Fair range (AI estimate):</strong> ₦{min_b} – ₦{max_b} Billion</p>
-      <p style="margin-top:2rem;text-align:center;">
-        <a href="/contracts" style="color:#2563eb;font-weight:bold;">→ Back to contracts</a>
-      </p>
-    </div>
-    """)
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><title>Bid Submitted</title>
+        <style>body{{font-family:Arial;background:#f0fdf4;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}}
+        .card{{background:white;padding:3rem;border-radius:16px;box-shadow:0 10px 30px rgba(16,185,129,0.25);max-width:600px;text-align:center;}}
+        h1{{color:#065f46;}} .info{{background:#ecfdf5;padding:1.5rem;border-radius:12px;margin:1.5rem 0;}}
+        .btn{{display:inline-block;padding:14px 32px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:1.5rem;}}
+        </style></head>
+        <body>
+          <div class="card">
+            <h1>✓ Bid Submitted Successfully</h1>
+            <div class="info">
+              <p><strong>Project:</strong> {project_name}</p>
+              <p><strong>Your Bid:</strong> ₦{bid_amount:,.2f} Billion</p>
+              <p><strong>AI Assessment:</strong> {status}</p>
+              <p><strong>Estimated fair range:</strong> ₦{min_b} – ₦{max_b} Billion</p>
+            </div>
+            <a href="/contracts" class="btn">Back to Contracts</a>
+          </div>
+        </body>
+        </html>
+        """)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bid submission failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
