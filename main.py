@@ -62,6 +62,17 @@ def get_current_user_id(request: Request) -> int:
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+def get_current_admin_id(request: Request) -> int:
+    token = request.cookies.get("admin_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Admin login required")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        return int(payload["sub"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Admin session expired")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
 # ────────────────────────────────────────────────
 # Database
 # ────────────────────────────────────────────────
@@ -77,6 +88,8 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
 def init_db():
     with sqlite3.connect("bids.db") as conn:
         c = conn.cursor()
+        
+        # Users table
         c.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
@@ -84,6 +97,8 @@ def init_db():
             company_name TEXT NOT NULL,
             cac_number TEXT NOT NULL
         )''')
+
+        # Bids table
         c.execute('''CREATE TABLE IF NOT EXISTS bids (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             contract_id INTEGER NOT NULL,
@@ -98,7 +113,23 @@ def init_db():
             status TEXT NOT NULL,
             submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )''')
-        conn.commit()
+
+        # Admins table ← NEW
+        c.execute('''CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            hashed_password TEXT NOT NULL
+        )''')
+
+        # Default admin account (CHANGE PASSWORD after first login!)
+        try:
+            c.execute(
+                "INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
+                ("admin", pwd_context.hash("AdminSecure2026!"))
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            pass  # already exists
 
 init_db()
 
@@ -254,7 +285,127 @@ async def logout():
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie("session_token")
     return resp
+# ====================== ADMIN LOGIN ======================
 
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_page():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head><meta charset="UTF-8"><title>Admin Login - AISEC</title>
+    <style>
+        body {font-family:Arial,sans-serif; background:#eff6ff; margin:0; display:flex; justify-content:center; align-items:center; min-height:100vh;}
+        .card {background:white; padding:3rem; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.15); width:400px;}
+        h2 {text-align:center; color:#1e40af;}
+        input {width:100%; padding:14px; margin:12px 0; border:1px solid #d1d5db; border-radius:8px;}
+        button {width:100%; padding:14px; background:#2563eb; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;}
+    </style></head>
+    <body>
+      <div class="card">
+        <h2>AISEC Admin Portal</h2>
+        <form method="post">
+          <input type="text" name="username" placeholder="Username" required>
+          <input type="password" name="password" placeholder="Password" required>
+          <button type="submit">Login as Admin</button>
+        </form>
+      </div>
+    </body>
+    </html>
+    """
+    @app.post("/admin/login", response_class=HTMLResponse)
+async def admin_login(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    cursor = db.cursor()
+    cursor.execute("SELECT id, hashed_password FROM admins WHERE username = ?", (username,))
+    admin = cursor.fetchone()
+
+    if not admin or not pwd_context.verify(password, admin["hashed_password"]):
+        return HTMLResponse(
+            admin_login_page() + '<p style="color:red;text-align:center;margin-top:20px;">Invalid credentials</p>',
+            status_code=401
+        )
+
+    token = create_access_token(str(admin["id"]))
+
+    resp = RedirectResponse("/admin/dashboard", status_code=303)
+    resp.set_cookie(
+        key="admin_token",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600
+    )
+    return resp
+
+    @app.get("/admin/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
+    get_current_admin_id(request)  # Only admin can access
+
+    cursor = db.cursor()
+    cursor.execute("""
+        SELECT b.id, b.contract_id, b.company_name, b.bid_amount, b.status, b.submitted_at,
+               df.project_name
+        FROM bids b
+        LEFT JOIN (SELECT row_number() OVER () - 1 as contract_id, project_name FROM df_bidding) df 
+               ON b.contract_id = df.contract_id
+        ORDER BY b.submitted_at DESC
+    """)
+    bids = cursor.fetchall()
+
+    rows = ""
+    for b in bids:
+        project_name = b["project_name"] or f"Contract {b['contract_id']}"
+        status_color = "#10b981" if b["status"] == "Approved" else "#ef4444"
+
+        rows += f"""
+        <tr>
+            <td><strong>#{b['id']}</strong></td>
+            <td>{project_name}</td>
+            <td>{b['company_name']}</td>
+            <td>₦{b['bid_amount']:,.2f}B</td>
+            <td style="color:{status_color};">{b['status']}</td>
+            <td>{b['submitted_at']}</td>
+            <td>
+                <form action="/admin/update-bid/{b['id']}" method="post" style="display:inline;">
+                    <input type="hidden" name="new_status" value="Approved">
+                    <button type="submit" style="background:#10b981;color:white;border:none;padding:6px 12px;border-radius:4px;">Approve</button>
+                </form>
+                <form action="/admin/update-bid/{b['id']}" method="post" style="display:inline;">
+                    <input type="hidden" name="new_status" value="Rejected">
+                    <button type="submit" style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:4px;">Reject</button>
+                </form>
+            </td>
+        </tr>
+        """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html><head><title>AISEC Admin Dashboard</title>
+    <style>
+        body {{font-family:Arial,sans-serif; background:#f8fafc; margin:0; padding:2rem;}}
+        h1 {{color:#1e40af; text-align:center;}}
+        table {{width:100%; border-collapse:collapse; background:white; box-shadow:0 4px 12px rgba(0,0,0,0.1);}}
+        th, td {{padding:14px; text-align:left; border-bottom:1px solid #e2e8f0;}}
+        th {{background:#eff6ff;}}
+        .logout {{float:right; color:#ef4444; text-decoration:none; font-weight:bold;}}
+    </style>
+    </head>
+    <body>
+        <h1>Admin Dashboard – All Bids</h1>
+        <a href="/admin/logout" class="logout">Logout</a>
+        <table>
+            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>Status</th><th>Date</th><th>Action</th></tr>
+            {rows}
+        </table>
+    </body></html>
+    """
+    return HTMLResponse(html)
+
+    
 # ── Contracts list ───────────────────────────────
 
 @app.get("/contracts", response_class=HTMLResponse)
@@ -460,8 +611,33 @@ async def submit_bid(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Bid submission failed: {str(e)}")
 
+@app.post("/admin/update-bid/{bid_id}")
+async def update_bid_status(
+    request: Request,
+    bid_id: int,
+    new_status: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    get_current_admin_id(request)   # admin only
+
+    if new_status not in ["Approved", "Rejected"]:
+        raise HTTPException(400, "Invalid status")
+
+    cursor = db.cursor()
+    cursor.execute("UPDATE bids SET status = ? WHERE id = ?", (new_status, bid_id))
+    db.commit()
+
+    return RedirectResponse("/admin/dashboard", status_code=303)
+
+
+@app.get("/admin/logout")
+async def admin_logout():
+    resp = RedirectResponse("/admin/login", status_code=303)
+    resp.delete_cookie("admin_token")
+    return resp
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
