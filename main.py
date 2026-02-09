@@ -104,10 +104,8 @@ def init_db():
         )''')
 
         try:
-            c.execute(
-                "INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
-                ("admin", pwd_context.hash("AdminSecure2026!"))
-            )
+            c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
+                      ("admin", pwd_context.hash("AdminSecure2026!")))
             conn.commit()
         except sqlite3.IntegrityError:
             pass
@@ -127,10 +125,10 @@ try:
             df_bidding[col] = "N/A"
 except Exception as e:
     print(f"Failed to load Google Sheet: {e}")
-    df_bidding = pd.DataFrame(columns=["project_name", "description", "latitude", "longitude", "terrain_type", "estimated_length_km"])
+    df_bidding = pd.DataFrame(columns=required)
 
 # ────────────────────────────────────────────────
-# Simple AI fairness check (placeholder)
+# Simple AI fairness check
 # ────────────────────────────────────────────────
 def is_fair_bid(bid_amount: float) -> tuple:
     base = 150_000_000_000
@@ -148,12 +146,10 @@ def is_fair_bid(bid_amount: float) -> tuple:
 async def root():
     return RedirectResponse("/login", status_code=303)
 
-# ── User Routes ─────────────────────────────────
-
+# ── Register ─────────────────────────────────────
 @app.get("/register", response_class=HTMLResponse)
 async def register_page():
-    return """
-    <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Register</title>
+    return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Register</title>
     <style>body{font-family:Arial;background:#f0f4f8;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
     .card{background:white;padding:2.5rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);width:420px;}
     input,button{width:100%;padding:12px;margin:10px 0;border:1px solid #d1d5db;border-radius:6px;}
@@ -163,8 +159,7 @@ async def register_page():
     <input name="cac_number" placeholder="CAC Number" required>
     <input type="email" name="email" placeholder="Email" required>
     <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Register</button></form></div></body></html>
-    """
+    <button type="submit">Register</button></form></div></body></html>"""
 
 @app.post("/register", response_class=HTMLResponse)
 @limiter.limit("5/minute")
@@ -179,14 +174,14 @@ async def register(request: Request, company_name: str = Form(...), cac_number: 
         cursor.execute("INSERT INTO users (email, hashed_password, company_name, cac_number) VALUES (?,?,?,?)",
                        (email, hashed, company_name.strip(), cac_number.strip()))
         db.commit()
-        return HTMLResponse('<h2 style="color:green;text-align:center;margin-top:100px;">Registration successful!<br><a href="/login">Login</a></h2>')
+        return HTMLResponse('<h2 style="color:green;text-align:center;margin-top:120px;">Registration successful!<br><a href="/login">Login</a></h2>')
     except sqlite3.IntegrityError:
         return HTMLResponse(register_page() + '<p style="color:red">Email already registered</p>', status_code=409)
 
+# ── Login ────────────────────────────────────────
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
-    return """
-    <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Login</title>
+    return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Login</title>
     <style>body{font-family:Arial;background:#f0f4f8;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
     .card{background:white;padding:2.5rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);width:380px;}
     input,button{width:100%;padding:12px;margin:10px 0;border:1px solid #d1d5db;border-radius:6px;}
@@ -194,8 +189,7 @@ async def login_page():
     <body><div class="card"><h2>Login</h2><form method="post">
     <input type="email" name="email" placeholder="Email" required>
     <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Sign In</button></form></div></body></html>
-    """
+    <button type="submit">Sign In</button></form></div></body></html>"""
 
 @app.post("/login", response_class=HTMLResponse)
 @limiter.limit("10/minute")
@@ -220,8 +214,7 @@ async def logout():
     resp.delete_cookie("session_token")
     return resp
 
-# ── Contracts List (with location & description) ───────────────────────────────
-
+# ── Contracts List (with description + location) ───────────────────────────────
 @app.get("/contracts", response_class=HTMLResponse)
 @limiter.limit("20/minute")
 async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_db)):
@@ -237,11 +230,10 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
             available.append({
                 "id": idx,
                 "project_name": row.get("project_name", f"Contract {idx}"),
-                "description": row.get("description", "No description"),
+                "description": row.get("description", "No description available"),
                 "location": f"Lat: {row.get('latitude','N/A')}, Lon: {row.get('longitude','N/A')}",
                 "terrain": row.get("terrain_type", "N/A"),
                 "length_km": row.get("estimated_length_km", "N/A"),
-                "Duration": row.get("months", "N/A"),
             })
 
     if not available:
@@ -258,7 +250,7 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
     """ for c in available)
 
     return HTMLResponse(f"""
-    <!DOCTYPE html><html><head><title>Contracts - AISEC</title>
+    <!DOCTYPE html><html><head><title>Available Contracts</title>
     <style>body{{font-family:Arial;background:#f8fafc;padding:2rem;}} h1{{color:#1e40af;}} .container{{max-width:900px;margin:auto;}}</style>
     </head><body><div class="container">
         <h1>Available Contracts</h1>
@@ -267,8 +259,7 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
     </div></body></html>
     """)
 
-# ── Bid Form + Submit (no AI range shown to bidder) ───────────────────────────
-
+# ── Bid Form & Submit (clean message for bidder) ───────────────────────────────
 @app.get("/bid/{contract_id}", response_class=HTMLResponse)
 async def bid_form(request: Request, contract_id: int):
     get_current_user_id(request)
@@ -297,21 +288,19 @@ async def bid_form(request: Request, contract_id: int):
 
 @app.post("/bid/{contract_id}", response_class=HTMLResponse)
 @limiter.limit("3/hour")
-async def submit_bid(
-    request: Request, contract_id: int,
-    company_name: str = Form(...), cac_number: str = Form(...),
-    email: str = Form(...), phone: str = Form(...),
-    bid_amount: float = Form(...),
-    equipment_list: str = Form(...), workforce: str = Form(...),
-    db: sqlite3.Connection = Depends(get_db)
-):
+async def submit_bid(request: Request, contract_id: int,
+                     company_name: str = Form(...), cac_number: str = Form(...),
+                     email: str = Form(...), phone: str = Form(...),
+                     bid_amount: float = Form(...),
+                     equipment_list: str = Form(...), workforce: str = Form(...),
+                     db: sqlite3.Connection = Depends(get_db)):
     user_id = get_current_user_id(request)
     if contract_id < 0 or contract_id >= len(df_bidding):
         raise HTTPException(404, "Contract not found")
     if bid_amount <= 0:
         raise HTTPException(400, "Bid amount must be positive")
 
-    status, _, _ = is_fair_bid(bid_amount)   # calculate for admin only
+    status, _, _ = is_fair_bid(bid_amount)
 
     cursor = db.cursor()
     cursor.execute("""
@@ -371,27 +360,6 @@ async def admin_login(username: str = Form(...), password: str = Form(...),
                     max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
     return resp
 
-
-    <!DOCTYPE html><html><head><title>Admin Dashboard</title>
-    <style>body{{font-family:Arial;background:#f8fafc;padding:2rem;}} table{{width:100%;border-collapse:collapse;background:white;}}
-    th,td{{padding:12px;text-align:left;border-bottom:1px solid #e2e8f0;}} th{{background:#eff6ff;}}</style></head>
-    <body><h1>Admin Dashboard – All Bids</h1>
-    <a href="/admin/logout" style="float:right;color:#ef4444;">Logout</a>
-    <table><tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>Status</th><th>Date</th><th>Action</th></tr>
-    {rows}</table></body></html>
-    """)
-
-    
-@app.post("/admin/update-bid/{bid_id}")
-async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
-                            db: sqlite3.Connection = Depends(get_db)):
-    get_current_admin_id(request)
-    if new_status not in ["Approved", "Rejected"]:
-        raise HTTPException(400, "Invalid status")
-    cursor = db.cursor()
-    cursor.execute("UPDATE bids SET status = ? WHERE id = ?", (new_status, bid_id))
-    db.commit()
-    return RedirectResponse("/admin/dashboard", status_code=303)
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
     get_current_admin_id(request)
@@ -406,11 +374,8 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 
     rows = ""
     for b in bids:
-        project_name = df_bidding.iloc[b["contract_id"]]["project_name"] \
-            if 0 <= b["contract_id"] < len(df_bidding) \
-            else f"Contract {b['contract_id']}"
-
-        status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#d97706"
+        project_name = df_bidding.iloc[b["contract_id"]].get("project_name", f"Contract {b['contract_id']}")
+        status_color = "#10b981" if b["status"] == "Approved" else "#ef4444"
 
         rows += f"""
         <tr>
@@ -433,7 +398,7 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
         </tr>
         """
 
-       return HTMLResponse(f"""
+    return HTMLResponse(f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -445,27 +410,30 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
             th {{ background: #eff6ff; }}
             .logout {{ float: right; color: #ef4444; text-decoration: none; font-weight: bold; }}
-            button {{ padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; }}
         </style>
     </head>
     <body>
         <h1>Admin Dashboard – All Bids</h1>
         <a href="/admin/logout" class="logout">Logout</a>
         <table>
-            <tr>
-                <th>ID</th>
-                <th>Project</th>
-                <th>Company</th>
-                <th>Bid Amount</th>
-                <th>Status</th>
-                <th>Date</th>
-                <th>Action</th>
-            </tr>
+            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>Status</th><th>Date</th><th>Action</th></tr>
             {rows}
         </table>
     </body>
     </html>
     """)
+
+@app.post("/admin/update-bid/{bid_id}")
+async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
+                            db: sqlite3.Connection = Depends(get_db)):
+    get_current_admin_id(request)
+    if new_status not in ["Approved", "Rejected"]:
+        raise HTTPException(400, "Invalid status")
+    cursor = db.cursor()
+    cursor.execute("UPDATE bids SET status = ? WHERE id = ?", (new_status, bid_id))
+    db.commit()
+    return RedirectResponse("/admin/dashboard", status_code=303)
+
 @app.get("/admin/logout")
 async def admin_logout():
     resp = RedirectResponse("/admin/login", status_code=303)
@@ -475,8 +443,3 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
-
-
-
