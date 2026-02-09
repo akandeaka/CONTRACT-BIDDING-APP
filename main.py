@@ -110,9 +110,15 @@ BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM
 
 try:
     df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
+    # Ensure all needed columns exist (with fallback)
+    required = ["project_name", "description", "latitude", "longitude", "terrain_type", "estimated_length_km"]
+    for col in required:
+        if col not in df_bidding.columns:
+            df_bidding[col] = "N/A"
 except Exception as e:
-    print(f"Failed to load contracts from Google Sheet: {e}")
-    df_bidding = pd.DataFrame()  # fallback
+    print(f"Could not load contracts sheet: {e}")
+    df_bidding = pd.DataFrame(columns=["project_name", "description", "latitude", "longitude", "terrain_type", "estimated_length_km"])
+BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
 # ────────────────────────────────────────────────
 # Simple fairness check (placeholder)
@@ -287,66 +293,103 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
     <!DOCTYPE html>
     <html>
     <head><title>Available Contracts - AISEC</title>
-    <style>body{{font-family:Arial;background:#f8fafc;margin:0;padding:2rem;}} h1{{color:#1e40af;text-align:center;}} .container{{max-width:900px;margin:auto;}} a.logout{{float:right;color:#ef4444;text-decoration:none;}}</style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Available Road Contracts</h1>
-        <a href="/logout" class="logout">Logout</a>
-        {items}
-      </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(html)
+    <style>body{{font-family:Arial;background:#f8fafc;margin:0;padding:2rem;}} h1{{color:#1e40af;text-align:center;}} .container{{max-width:900px;margin
 
 # ── Bid submission ───────────────────────────────
 
 # ── Bid form (GET) ──────────────────────────────────────────────────────────────
+@app.get("/contracts", response_class=HTMLResponse)
+@limiter.limit("20/minute")
+async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_db)):
+    user_id = get_current_user_id(request)
 
-@app.get("/bid/{contract_id}", response_class=HTMLResponse)
-async def bid_form(request: Request, contract_id: int):
-    # Just check authentication (no db needed here)
-    get_current_user_id(request)
+    cursor = db.cursor()
+    cursor.execute("SELECT contract_id FROM bids WHERE user_id = ?", (user_id,))
+    already_bid = {r["contract_id"] for r in cursor.fetchall()}
 
-    if contract_id < 0 or contract_id >= len(df_bidding):
-        raise HTTPException(404, "Contract not found")
+    available = []
+    for idx, row in df_bidding.iterrows():
+        if idx not in already_bid:
+            available.append({
+                "id": idx,
+                "project_name": row.get("project_name", f"Contract {idx}"),
+                "description": row.get("description", "No description provided"),
+                "location": f"Lat: {row.get('latitude', 'N/A')}, Lon: {row.get('longitude', 'N/A')}",
+                "terrain": row.get("terrain_type", "N/A"),
+                "length_km": row.get("estimated_length_km", "N/A"),
+            })
 
-    project = df_bidding.iloc[contract_id].get("project_name", f"Contract {contract_id}")
+    if not available:
+        return HTMLResponse("""
+        <h2 style="text-align:center; margin-top:100px; color:#6b7280;">
+            No more contracts available to bid on at the moment.
+        </h2>
+        """)
+
+    items = ""
+    for c in available:
+        items += f"""
+        <div style="border:1px solid #d1d5db; border-radius:8px; padding:1.5rem; margin-bottom:1.5rem; background:white;">
+            <h3>{c['project_name']}</h3>
+            <p><strong>Description:</strong> {c['description']}</p>
+            <p><strong>Location:</strong> {c['location']}</p>
+            <p><strong>Terrain:</strong> {c['terrain']} • Length: {c['length_km']} km</p>
+            <a href="/bid/{c['id']}" style="color:#2563eb; font-weight:bold; text-decoration:none;">
+                → Place Bid
+            </a>
+        </div>
+        """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><title>Available Contracts - AISEC</title>
+    <style>
+        body {{font-family:Arial,sans-serif; background:#f8fafc; margin:0; padding:2rem;}}
+        h1 {{color:#1e40af; text-align:center;}}
+        .container {{max-width:900px; margin:0 auto;}}
+        a.logout {{float:right; color:#ef4444; text-decoration:none; font-weight:bold;}}
+    </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Available Road Contracts</h1>
+            <a href="/logout" class="logout">Logout</a>
+            {items}
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(html)
+    # After successful insert
+    project_name = df_bidding.iloc[contract_id].get("project_name", "Unknown project")
 
     return HTMLResponse(f"""
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <title>Bid on {project}</title>
-      <style>
-        body {{font-family:Arial,sans-serif; background:#f0f4f8; padding:2rem; margin:0;}}
-        .card {{background:white; max-width:600px; margin:auto; padding:2.5rem; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.1);}}
-        label {{display:block; margin:1.2rem 0 0.5rem; font-weight:600;}}
-        input, textarea {{width:100%; padding:12px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;}}
-        button {{margin-top:2rem; width:100%; padding:14px; background:#10b981; color:white; border:none; border-radius:8px; font-size:1.1rem; cursor:pointer;}}
-      </style>
+    <head><meta charset="UTF-8"><title>Bid Submitted - AISEC</title>
+    <style>
+        body {{font-family:Arial,sans-serif; background:#f0fdf4; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0;}}
+        .card {{background:white; padding:3rem; border-radius:16px; box-shadow:0 10px 30px rgba(16,185,129,0.25); max-width:600px; text-align:center;}}
+        h1 {{color:#065f46;}}
+        .btn {{display:inline-block; padding:14px 32px; background:#1e40af; color:white; border-radius:8px; text-decoration:none; font-weight:bold; margin-top:2rem;}}
+    </style>
     </head>
     <body>
       <div class="card">
-        <h2>Bid for: {project}</h2>
-        <form method="post">
-          <label>Company Name</label><input name="company_name" required>
-          <label>CAC Number</label><input name="cac_number" required>
-          <label>Email</label><input type="email" name="email" required>
-          <label>Phone</label><input name="phone" required>
-          <label>Bid Amount (₦ Billion)</label><input type="number" step="0.01" min="0.01" name="bid_amount" required>
-          <label>Equipment List</label><textarea name="equipment_list" rows="4" required></textarea>
-          <label>Workforce Description</label><textarea name="workforce" rows="4" required></textarea>
-          <button type="submit">Submit Bid</button>
-        </form>
+        <h1>✓ Bid Submitted Successfully</h1>
+        <p style="font-size:1.1rem; margin:2rem 0;">
+            Your bid for <strong>{project_name}</strong><br>
+            in the amount of <strong>₦{bid_amount:,.2f} Billion</strong> has been received.
+        </p>
+        <p>We will review it shortly. You will be notified of the outcome.</p>
+        <a href="/contracts" class="btn">Back to Contracts</a>
       </div>
     </body>
     </html>
     """)
 
-
+    
 # ── Submit bid (POST) ───────────────────────────────────────────────────────────
 
 @app.post("/bid/{contract_id}", response_class=HTMLResponse)
@@ -420,4 +463,5 @@ async def submit_bid(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
