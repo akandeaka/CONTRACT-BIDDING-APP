@@ -221,7 +221,66 @@ async def login_user(request: Request, email: str = Form(...), password: str = F
     resp.set_cookie(key="session_token", value=token, httponly=True, secure=True, samesite="lax",
                     max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
     return resp
+# ── Admin Login Page ────────────────────────────────────────────────────────────
 
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_page():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Admin Login - AISEC</title>
+        <style>
+            body {font-family:Arial,sans-serif; background:#eff6ff; margin:0; display:flex; justify-content:center; align-items:center; min-height:100vh;}
+            .card {background:white; padding:3rem; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.15); width:400px;}
+            h2 {text-align:center; color:#1e40af;}
+            input {width:100%; padding:14px; margin:12px 0; border:1px solid #d1d5db; border-radius:8px;}
+            button {width:100%; padding:14px; background:#2563eb; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h2>Admin Login</h2>
+            <form method="post">
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+
+
+@app.post("/admin/login", response_class=HTMLResponse)
+async def admin_login(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    cursor = db.cursor()
+    cursor.execute("SELECT id, hashed_password FROM admins WHERE username = ?", (username,))
+    admin = cursor.fetchone()
+
+    if not admin or not pwd_context.verify(password, admin["hashed_password"]):
+        return HTMLResponse(
+            await admin_login_page() + '<p style="color:red;text-align:center;margin-top:1.5rem;">Invalid credentials</p>',
+            status_code=401
+        )
+
+    token = create_access_token(str(admin["id"]))
+
+    resp = RedirectResponse("/admin/dashboard", status_code=303)
+    resp.set_cookie(
+        key="admin_token",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600
+    )
+    return resp
 @app.get("/logout")
 async def logout():
     resp = RedirectResponse("/login", status_code=303)
@@ -478,6 +537,7 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
