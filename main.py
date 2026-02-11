@@ -430,11 +430,28 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
     """)
     bids = cursor.fetchall()
 
+    total_bids = len(bids)
+    approved = sum(1 for b in bids if b["status"] == "Approved")
+    rejected = sum(1 for b in bids if b["status"] == "Rejected")
+    pending = total_bids - approved - rejected
+
+    # AI Accuracy Calculation (how many bids were within ±15% of AI mid-point)
+    accurate_count = 0
+    for b in bids:
+        if b["predicted_min"] is None or b["predicted_max"] is None:
+            continue
+        ai_mid = (b["predicted_min"] + b["predicted_max"]) / 2
+        if ai_mid > 0:
+            variance = abs((b["bid_amount"] - ai_mid) / ai_mid) * 100
+            if variance <= 15:
+                accurate_count += 1
+
+    ai_accuracy = round((accurate_count / total_bids) * 100, 1) if total_bids > 0 else 0
+
     rows = ""
     for b in bids:
         contract_id = b["contract_id"]
         project_name = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
-
         min_fair = b["predicted_min"] if b["predicted_min"] is not None else "N/A"
         max_fair = b["predicted_max"] if b["predicted_max"] is not None else "N/A"
         status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#f59e0b"
@@ -449,9 +466,9 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             <td style="color:{status_color};">{b['status']}</td>
             <td>{b['submitted_at'][:10]}</td>
             <td>
-                <button onclick="openReviewModal({b['id']}, '{project_name.replace("'", "\\'")}', {b['bid_amount']}, {min_fair}, {max_fair})"
+                <button onclick="openReviewModal({b['id']}, '{project_name.replace("'", "\\'")}', {b['bid_amount']}, {min_fair}, {max_fair})" 
                         style="background:#3b82f6;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">
-                    Review & Decide
+                    Review
                 </button>
             </td>
         </tr>
@@ -459,26 +476,52 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 
     return HTMLResponse(f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <meta charset="UTF-8">
         <title>AISEC Admin Dashboard</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
-            body {{ font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 20px; }}
-            h1 {{ color: #1e40af; text-align: center; }}
-            table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
-            th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
+            body {{ font-family: Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 20px; }}
+            .header {{ background: linear-gradient(135deg, #1e40af, #3b82f6); color: white; padding: 2rem; border-radius: 16px; text-align: center; margin-bottom: 30px; }}
+            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+            .stat-card {{ background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }}
+            .stat-number {{ font-size: 2.8rem; font-weight: bold; margin: 10px 0; }}
+            table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }}
+            th, td {{ padding: 16px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
             th {{ background: #1e40af; color: white; }}
-            button {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; color: white; }}
+            tr:hover {{ background: #f8fafc; }}
             .modal {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }}
             .modal-content {{ background: white; padding: 30px; border-radius: 16px; width: 90%; max-width: 600px; }}
         </style>
     </head>
     <body>
-        <h1>Admin Dashboard – All Bids</h1>
-        <a href="/admin/logout" style="float:right;color:#ef4444;">Logout</a>
+        <div class="header">
+            <h1>AISEC Admin Dashboard</h1>
+            <p>AI-Powered Fair Bidding & Anti-Corruption System</p>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card"><div class="stat-number">{total_bids}</div><p>Total Bids</p></div>
+            <div class="stat-card"><div class="stat-number" style="color:#10b981">{approved}</div><p>Approved</p></div>
+            <div class="stat-card"><div class="stat-number" style="color:#ef4444">{rejected}</div><p>Rejected</p></div>
+            <div class="stat-card"><div class="stat-number" style="color:#f59e0b">{pending}</div><p>Pending Review</p></div>
+            <div class="stat-card"><div class="stat-number" style="color:#3b82f6">{ai_accuracy}%</div><p>AI Accuracy</p></div>
+        </div>
+
+        <canvas id="approvalChart" style="max-height:350px; margin-bottom:30px;"></canvas>
+
         <table>
-            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>AI Fair Range</th><th>Status</th><th>Date</th><th>Action</th></tr>
+            <tr>
+                <th>ID</th>
+                <th>Project</th>
+                <th>Company</th>
+                <th>Bid Amount</th>
+                <th>AI Fair Range</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Action</th>
+            </tr>
             {rows}
         </table>
 
@@ -488,13 +531,28 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
                 <h2 id="modalProject"></h2>
                 <p><strong>Bid Amount:</strong> <span id="modalBid"></span></p>
                 <p><strong>AI Fair Range:</strong> <span id="modalAIRange"></span></p>
-                <textarea id="adminComment" rows="5" style="width:100%;margin:15px 0;padding:12px;" placeholder="Reason for rejection..."></textarea>
-                <button onclick="submitDecision('Approved')" style="background:#10b981;width:48%;padding:12px;border:none;border-radius:8px;color:white;cursor:pointer;">Approve</button>
-                <button onclick="submitDecision('Rejected')" style="background:#ef4444;width:48%;padding:12px;border:none;border-radius:8px;color:white;cursor:pointer;">Reject</button>
+                <textarea id="adminComment" rows="5" placeholder="Reason for rejection or approval comment..."></textarea>
+                <div style="margin-top:20px;">
+                    <button onclick="submitDecision('Approved')" style="background:#10b981;width:48%;padding:12px;color:white;border:none;border-radius:8px;cursor:pointer;">Approve</button>
+                    <button onclick="submitDecision('Rejected')" style="background:#ef4444;width:48%;padding:12px;color:white;border:none;border-radius:8px;cursor:pointer;">Reject</button>
+                </div>
             </div>
         </div>
 
         <script>
+            // Approval Rate Pie Chart
+            new Chart(document.getElementById('approvalChart'), {{
+                type: 'pie',
+                data: {{
+                    labels: ['Approved', 'Rejected', 'Pending'],
+                    datasets: [{{
+                        data: [{approved}, {rejected}, {pending}],
+                        backgroundColor: ['#10b981', '#ef4444', '#f59e0b']
+                    }}]
+                }},
+                options: {{ responsive: true, plugins: {{ legend: {{ position: 'bottom' }} }} }}
+            }});
+
             let currentBidId = null;
             function openReviewModal(bidId, project, bidAmount, aiMin, aiMax) {{
                 currentBidId = bidId;
@@ -504,7 +562,7 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
                 document.getElementById("reviewModal").style.display = "flex";
             }}
             async function submitDecision(status) {{
-                const comment = document.getElementById("adminComment").value.trim();
+                const comment = document.getElementById("adminComment").value;
                 await fetch(`/admin/update-bid/${{currentBidId}}`, {{
                     method: "POST",
                     headers: {{"Content-Type": "application/x-www-form-urlencoded"}},
@@ -516,7 +574,6 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
     </body>
     </html>
     """)
-
 @app.post("/admin/update-bid/{bid_id}")
 async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
                             db: sqlite3.Connection = Depends(get_db)):
@@ -537,6 +594,7 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
