@@ -171,9 +171,6 @@ async def register_page():
     <button type="submit">Register</button></form></div></body></html>"""
 
 @app.post("/register", response_class=HTMLResponse)
-from fastapi import Request   # ← make sure this is imported (already in your file)
-
-@app.post("/register", response_class=HTMLResponse)
 @limiter.limit("5/minute")
 async def register(
     request: Request,                    # ← THIS LINE IS REQUIRED (must be first!)
@@ -439,4 +436,5 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
