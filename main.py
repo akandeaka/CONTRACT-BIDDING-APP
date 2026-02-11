@@ -586,6 +586,40 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
     </body>
     </html>
     """)
+        return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>AISEC Admin Dashboard</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 2rem; }}
+            h1 {{ color: #1e40af; text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }}
+            th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
+            th {{ background: #eff6ff; }}
+            .logout {{ float: right; color: #ef4444; text-decoration: none; font-weight: bold; }}
+            button {{ padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; }}
+        </style>
+    </head>
+    <body>
+        <h1>Admin Dashboard – All Bids</h1>
+        <a href="/admin/logout" class="logout">Logout</a>
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Project</th>
+                <th>Company</th>
+                <th>Bid Amount</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>AI Predicted Fair Range & Action</th>
+            </tr>
+            {rows}
+        </table>
+    </body>
+    </html>
+    """)
 @app.post("/admin/update-bid/{bid_id}")
 async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
                             db: sqlite3.Connection = Depends(get_db)):
@@ -606,6 +640,7 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
