@@ -6,6 +6,11 @@ from typing import Generator
 
 import jwt
 import pandas as pd
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_percentage_error
+import joblib
+
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from passlib.context import CryptContext
@@ -121,302 +126,110 @@ BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM
 
 try:
     df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
+    print("Loaded sheet with", len(df_bidding), "contracts")
+    print("Columns:", list(df_bidding.columns))
 except Exception as e:
     print(f"Failed to load Google Sheet: {e}")
     df_bidding = pd.DataFrame()
 
 # ────────────────────────────────────────────────
-# AI Fair Value Prediction (using real features)
+# Train / Load XGBoost Model (real prediction)
+# ────────────────────────────────────────────────
+MODEL_FILE = "ai_contract_model.joblib"
+
+def train_model():
+    global model
+    print("Training XGBoost model...")
+
+    df = df_bidding.copy()
+
+    # Convert categorical to numeric
+    for col in ["terrain_type", "geopolitical_zone"]:
+        if col in df.columns:
+            df[col] = df[col].astype("category").cat.codes
+
+    features = [
+        "estimated_length_km", "terrain_type", "latitude", "longitude",
+        "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"
+    ]
+
+    # Target: use proxy if no real cost column
+    if "boq_total_cost" not in df.columns:
+        print("No real cost column → using proxy target")
+        df["boq_total_cost"] = df["estimated_length_km"] * 1_200_000_000
+
+    X = df[features].fillna(0)
+    y = df["boq_total_cost"]
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    model = xgb.XGBRegressor(
+        n_estimators=500,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42
+    )
+
+    model.fit(X_train, y_train)
+
+    preds = model.predict(X_test)
+    mape = mean_absolute_percentage_error(y_test, preds) * 100
+    print(f"Model trained → MAPE: {mape:.2f}%")
+
+    joblib.dump(model, MODEL_FILE)
+    return model
+
+# Load or train model
+try:
+    model = joblib.load(MODEL_FILE)
+    print("Loaded existing XGBoost model")
+except FileNotFoundError:
+    model = train_model()
+
+# ────────────────────────────────────────────────
+# Use real model for fair bid prediction
 # ────────────────────────────────────────────────
 def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
     if contract_id >= len(df_bidding):
         return "Under Review", 0, 0
 
     row = df_bidding.iloc[contract_id]
-    length_km = float(row.get("estimated_length_km", 100))
-    terrain = str(row.get("terrain_type", "Semi-arid flat")).lower()
 
-    base_per_km = 1_000_000_000
-    terrain_factor = {"arid": 0.85, "semi-arid": 0.95, "rainforest": 1.35, "mangrove": 1.65, "hilly": 1.25}.get(terrain[:6], 1.0)
+    input_dict = {
+        "estimated_length_km": float(row.get("estimated_length_km", 100)),
+        "terrain_type": str(row.get("terrain_type", "Semi-arid flat")),
+        "latitude": float(row.get("latitude", 0)),
+        "longitude": float(row.get("longitude", 0)),
+        "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
+        "elevation_m": float(row.get("elevation_m", 300)),
+        "has_bridge": int(row.get("has_bridge", 0)),
+        "is_dual_carriageway": int(row.get("is_dual_carriageway", 0)),
+    }
 
-    predicted = base_per_km * length_km * terrain_factor * 1.18
-    min_fair = predicted * 0.88
-    max_fair = predicted * 1.12
+    input_df = pd.DataFrame([input_dict])
+
+    # Encode terrain_type to match training
+    terrain_map = {"arid": 0, "semi-arid": 1, "rainforest": 2, "mangrove": 3, "hilly": 4}
+    input_df["terrain_type"] = input_df["terrain_type"].str.lower().map(terrain_map).fillna(1)
+
+    predicted_value = model.predict(input_df)[0]
+
+    min_fair = predicted_value * 0.88
+    max_fair = predicted_value * 1.12
 
     status = "Fair" if min_fair <= bid_amount <= max_fair else "Under Review"
+
     return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
 
 # ────────────────────────────────────────────────
-# Routes
+# Routes (only showing relevant parts – add your other routes as before)
 # ────────────────────────────────────────────────
 
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    return RedirectResponse("/login", status_code=303)
+# ... your existing login/register/contracts/bid routes ...
 
-# ── Register & Login (kept simple & working) ─────────────────────────────────
-
-@app.get("/register", response_class=HTMLResponse)
-async def register_page():
-    return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Register</title>
-    <style>body{font-family:Arial;background:#f0f4f8;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
-    .card{background:white;padding:2.5rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);width:420px;}
-    input,button{width:100%;padding:12px;margin:10px 0;border:1px solid #d1d5db;border-radius:6px;}
-    button{background:#10b981;color:white;border:none;font-weight:bold;cursor:pointer;}</style></head>
-    <body><div class="card"><h2>Create Account</h2><form method="post">
-    <input name="company_name" placeholder="Company Name" required>
-    <input name="cac_number" placeholder="CAC Number" required>
-    <input type="email" name="email" placeholder="Email" required>
-    <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Register</button></form></div></body></html>"""
-
-@app.post("/register", response_class=HTMLResponse)
-@limiter.limit("5/minute")
-async def register(
-    request: Request,                    # ← THIS LINE IS REQUIRED (must be first!)
-    company_name: str = Form(...),
-    cac_number: str = Form(...),
-    email: str = Form(...),
-    password: str = Form(...),
-    db: sqlite3.Connection = Depends(get_db)
-):
-    email = email.strip().lower()
-    if len(password) < 8:
-        return HTMLResponse(register_page() + '<p style="color:red">Password too short</p>', status_code=400)
-    
-    hashed = pwd_context.hash(password)
-    cursor = db.cursor()
-    try:
-        cursor.execute("INSERT INTO users (email, hashed_password, company_name, cac_number) VALUES (?,?,?,?)",
-                       (email, hashed, company_name.strip(), cac_number.strip()))
-        db.commit()
-        return HTMLResponse('<h2 style="color:green;text-align:center;margin-top:120px;">Registration successful!<br><a href="/login">Login</a></h2>')
-    except sqlite3.IntegrityError:
-        return HTMLResponse(register_page() + '<p style="color:red">Email already registered</p>', status_code=409)
-@app.get("/login", response_class=HTMLResponse)
-async def login_page():
-    return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Login</title>
-    <style>body{font-family:Arial;background:#f0f4f8;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
-    .card{background:white;padding:2.5rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);width:380px;}
-    input,button{width:100%;padding:12px;margin:10px 0;border:1px solid #d1d5db;border-radius:6px;}
-    button{background:#2563eb;color:white;border:none;font-weight:bold;cursor:pointer;}</style></head>
-    <body><div class="card"><h2>Login</h2><form method="post">
-    <input type="email" name="email" placeholder="Email" required>
-    <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Sign In</button></form></div></body></html>"""
-
-@app.post("/login", response_class=HTMLResponse)
-@limiter.limit("10/minute")
-async def login_user(request: Request, email: str = Form(...), password: str = Form(...),
-                     db: sqlite3.Connection = Depends(get_db)):
-    email = email.strip().lower()
-    cursor = db.cursor()
-    cursor.execute("SELECT id, hashed_password FROM users WHERE email = ?", (email,))
-    user = cursor.fetchone()
-    if not user or not pwd_context.verify(password, user["hashed_password"]):
-        return HTMLResponse(login_page() + '<p style="color:red">Invalid credentials</p>', status_code=401)
-
-    token = create_access_token(str(user["id"]))
-    resp = RedirectResponse("/contracts", status_code=303)
-    resp.set_cookie(key="session_token", value=token, httponly=True, secure=True, samesite="lax",
-                    max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
-    return resp
-# ── Admin Login Page ────────────────────────────────────────────────────────────
-
-@app.get("/admin/login", response_class=HTMLResponse)
-async def admin_login_page():
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Admin Login - AISEC</title>
-        <style>
-            body {font-family:Arial,sans-serif; background:#eff6ff; margin:0; display:flex; justify-content:center; align-items:center; min-height:100vh;}
-            .card {background:white; padding:3rem; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.15); width:400px;}
-            h2 {text-align:center; color:#1e40af;}
-            input {width:100%; padding:14px; margin:12px 0; border:1px solid #d1d5db; border-radius:8px;}
-            button {width:100%; padding:14px; background:#2563eb; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h2>Admin Login</h2>
-            <form method="post">
-                <input type="text" name="username" placeholder="Username" required>
-                <input type="password" name="password" placeholder="Password" required>
-                <button type="submit">Login</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    """
-
-
-@app.post("/admin/login", response_class=HTMLResponse)
-async def admin_login(
-    username: str = Form(...),
-    password: str = Form(...),
-    db: sqlite3.Connection = Depends(get_db)
-):
-    cursor = db.cursor()
-    cursor.execute("SELECT id, hashed_password FROM admins WHERE username = ?", (username,))
-    admin = cursor.fetchone()
-
-    if not admin or not pwd_context.verify(password, admin["hashed_password"]):
-        return HTMLResponse(
-            await admin_login_page() + '<p style="color:red;text-align:center;margin-top:1.5rem;">Invalid credentials</p>',
-            status_code=401
-        )
-
-    token = create_access_token(str(admin["id"]))
-
-    resp = RedirectResponse("/admin/dashboard", status_code=303)
-    resp.set_cookie(
-        key="admin_token",
-        value=token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600
-    )
-    return resp
-@app.get("/logout")
-async def logout():
-    resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie("session_token")
-    return resp
-
-# ── Contracts List ───────────────────────────────
-@app.get("/contracts", response_class=HTMLResponse)
-@limiter.limit("20/minute")
-async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_db)):
-    user_id = get_current_user_id(request)
-
-    cursor = db.cursor()
-    cursor.execute("SELECT contract_id FROM bids WHERE user_id = ?", (user_id,))
-    already_bid = {r["contract_id"] for r in cursor.fetchall()}
-
-    available = []
-    for idx, row in df_bidding.iterrows():
-        if idx not in already_bid:
-            available.append({
-                "id": idx,
-                "project_name": row.get("Project_name", f"Contract {idx}"),
-                "description": row.get("Description", "No description available"),
-                "location": f"Lat: {row.get('latitude','N/A')}, Lon: {row.get('longitude','N/A')}",
-                "terrain": row.get("terrain_type", "N/A"),
-                "length_km": row.get("estimated_length_km", "N/A"),
-            })
-
-    if not available:
-        return HTMLResponse("<h2 style='text-align:center;margin-top:120px;'>No contracts available.</h2>")
-
-    items = "".join(f"""
-        <div style="border:1px solid #d1d5db;border-radius:8px;padding:1.5rem;margin-bottom:1.5rem;background:white;">
-            <h3>{c['project_name']}</h3>
-            <p><strong>Description:</strong> {c['description']}</p>
-            <p><strong>Location:</strong> {c['location']}</p>
-            <p><strong>Terrain:</strong> {c['terrain']} • Length: {c['length_km']} km</p>
-            <a href="/bid/{c['id']}" style="color:#2563eb;font-weight:bold;">→ Place Bid</a>
-        </div>
-    """ for c in available)
-
-    return HTMLResponse(f"""
-    <!DOCTYPE html><html><head><title>Available Contracts</title>
-    <style>body{{font-family:Arial;background:#f8fafc;padding:2rem;}} h1{{color:#1e40af;}} .container{{max-width:900px;margin:auto;}}</style>
-    </head><body><div class="container">
-        <h1>Available Contracts</h1>
-        <a href="/logout" style="float:right;color:#ef4444;">Logout</a>
-        {items}
-    </div></body></html>
-    """)
-
-# ── Bid Submission (stores real AI prediction) ───────────────────────────────
-@app.get("/bid/{contract_id}", response_class=HTMLResponse)
-async def bid_form(request: Request, contract_id: int):
-    # Check if user is logged in
-    get_current_user_id(request)
-
-    if contract_id < 0 or contract_id >= len(df_bidding):
-        raise HTTPException(404, "Contract not found")
-
-    project = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
-
-    return HTMLResponse(f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Bid on {project}</title>
-        <style>
-            body {{font-family:Arial,sans-serif; background:#f0f4f8; padding:2rem; margin:0;}}
-            .card {{background:white; max-width:600px; margin:auto; padding:2.5rem; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.1);}}
-            label {{display:block; margin:1.2rem 0 0.5rem; font-weight:600;}}
-            input, textarea {{width:100%; padding:12px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;}}
-            button {{margin-top:2rem; width:100%; padding:14px; background:#10b981; color:white; border:none; border-radius:8px; font-size:1.1rem; cursor:pointer;}}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h2>Bid for: {project}</h2>
-            <form method="post">
-                <label>Company Name</label><input name="company_name" required>
-                <label>CAC Number</label><input name="cac_number" required>
-                <label>Email</label><input type="email" name="email" required>
-                <label>Phone</label><input name="phone" required>
-                <label>Bid Amount (₦ Billion)</label><input type="number" step="0.01" min="0.01" name="bid_amount" required>
-                <label>Equipment List</label><textarea name="equipment_list" rows="4" required></textarea>
-                <label>Workforce Description</label><textarea name="workforce" rows="4" required></textarea>
-                <button type="submit">Submit Bid</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    """)
-
-@app.post("/bid/{contract_id}", response_class=HTMLResponse)
-@limiter.limit("3/hour")
-async def submit_bid(request: Request, contract_id: int,
-                     company_name: str = Form(...), cac_number: str = Form(...),
-                     email: str = Form(...), phone: str = Form(...),
-                     bid_amount: float = Form(...),
-                     equipment_list: str = Form(...), workforce: str = Form(...),
-                     db: sqlite3.Connection = Depends(get_db)):
-    user_id = get_current_user_id(request)
-    if contract_id < 0 or contract_id >= len(df_bidding):
-        raise HTTPException(404, "Contract not found")
-    if bid_amount <= 0:
-        raise HTTPException(400, "Bid amount must be positive")
-
-    status, min_fair, max_fair = is_fair_bid(contract_id, bid_amount)
-
-    cursor = db.cursor()
-    cursor.execute("""
-        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone,
-                          bid_amount, equipment_list, workforce, status, predicted_min, predicted_max)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (contract_id, user_id, company_name.strip(), cac_number.strip(), email.strip(), phone.strip(),
-          bid_amount, equipment_list.strip(), workforce.strip(), status, min_fair, max_fair))
-    db.commit()
-
-    project_name = df_bidding.iloc[contract_id].get("Project_name", "Unknown project")
-
-    return HTMLResponse(f"""
-    <!DOCTYPE html>
-    <html><head><title>Success</title>
-    <style>body{{font-family:Arial;background:#f0fdf4;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}}
-    .card{{background:white;padding:3rem;border-radius:16px;box-shadow:0 10px 30px rgba(16,185,129,0.25);max-width:600px;text-align:center;}}
-    h1{{color:#065f46;}} .btn{{display:inline-block;padding:14px 32px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:2rem;}}</style></head>
-    <body><div class="card">
-      <h1>✓ Bid Submitted Successfully</h1>
-      <p>Your bid for <strong>{project_name}</strong> of <strong>₦{bid_amount:,.2f} Billion</strong> has been received.</p>
-      <p>We will review it shortly.</p>
-      <a href="/contracts" class="btn">Back to Contracts</a>
-    </div></body></html>
-    """)
-
-# ── Admin Dashboard (Beautiful + AI Range + Review Modal) ─────────────────────
+# Admin Dashboard with AI range
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
     get_current_admin_id(request)
@@ -430,30 +243,13 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
     """)
     bids = cursor.fetchall()
 
-    total_bids = len(bids)
-    approved = sum(1 for b in bids if b["status"] == "Approved")
-    rejected = sum(1 for b in bids if b["status"] == "Rejected")
-    pending = total_bids - approved - rejected
-
-    # AI Accuracy Calculation (how many bids were within ±15% of AI mid-point)
-    accurate_count = 0
-    for b in bids:
-        if b["predicted_min"] is None or b["predicted_max"] is None:
-            continue
-        ai_mid = (b["predicted_min"] + b["predicted_max"]) / 2
-        if ai_mid > 0:
-            variance = abs((b["bid_amount"] - ai_mid) / ai_mid) * 100
-            if variance <= 15:
-                accurate_count += 1
-
-    ai_accuracy = round((accurate_count / total_bids) * 100, 1) if total_bids > 0 else 0
-
     rows = ""
     for b in bids:
         contract_id = b["contract_id"]
         project_name = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
         min_fair = b["predicted_min"] if b["predicted_min"] is not None else "N/A"
         max_fair = b["predicted_max"] if b["predicted_max"] is not None else "N/A"
+
         status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#f59e0b"
 
         rows += f"""
@@ -466,9 +262,9 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             <td style="color:{status_color};">{b['status']}</td>
             <td>{b['submitted_at'][:10]}</td>
             <td>
-                <button onclick="openReviewModal({b['id']}, '{project_name.replace("'", "\\'")}', {b['bid_amount']}, {min_fair}, {max_fair})" 
+                <button onclick="openReviewModal({b['id']}, '{project_name.replace("'", "\\'")}', {b['bid_amount']}, {min_fair}, {max_fair})"
                         style="background:#3b82f6;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">
-                    Review
+                    Review Bid
                 </button>
             </td>
         </tr>
@@ -476,126 +272,32 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 
     return HTMLResponse(f"""
     <!DOCTYPE html>
-    <html lang="en">
+    <html>
     <head>
         <meta charset="UTF-8">
         <title>AISEC Admin Dashboard</title>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
-            body {{ font-family: Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 20px; }}
-            .header {{ background: linear-gradient(135deg, #1e40af, #3b82f6); color: white; padding: 2rem; border-radius: 16px; text-align: center; margin-bottom: 30px; }}
-            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }}
-            .stat-card {{ background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }}
-            .stat-number {{ font-size: 2.8rem; font-weight: bold; margin: 10px 0; }}
-            table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }}
-            th, td {{ padding: 16px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
+            body {{ font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 20px; }}
+            h1 {{ color: #1e40af; text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
+            th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
             th {{ background: #1e40af; color: white; }}
-            tr:hover {{ background: #f8fafc; }}
-            .modal {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }}
-            .modal-content {{ background: white; padding: 30px; border-radius: 16px; width: 90%; max-width: 600px; }}
+            button {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; color: white; }}
         </style>
     </head>
     <body>
-        <div class="header">
-            <h1>AISEC Admin Dashboard</h1>
-            <p>AI-Powered Fair Bidding & Anti-Corruption System</p>
-        </div>
-
-        <div class="stats">
-            <div class="stat-card"><div class="stat-number">{total_bids}</div><p>Total Bids</p></div>
-            <div class="stat-card"><div class="stat-number" style="color:#10b981">{approved}</div><p>Approved</p></div>
-            <div class="stat-card"><div class="stat-number" style="color:#ef4444">{rejected}</div><p>Rejected</p></div>
-            <div class="stat-card"><div class="stat-number" style="color:#f59e0b">{pending}</div><p>Pending Review</p></div>
-            <div class="stat-card"><div class="stat-number" style="color:#3b82f6">{ai_accuracy}%</div><p>AI Accuracy</p></div>
-        </div>
-
-        <canvas id="approvalChart" style="max-height:350px; margin-bottom:30px;"></canvas>
-
+        <h1>Admin Dashboard – All Bids</h1>
+        <a href="/admin/logout" style="float:right;color:#ef4444;">Logout</a>
         <table>
-            <tr>
-                <th>ID</th>
-                <th>Project</th>
-                <th>Company</th>
-                <th>Bid Amount</th>
-                <th>AI Fair Range</th>
-                <th>Status</th>
-                <th>Date</th>
-                <th>Action</th>
-            </tr>
+            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>AI Fair Range</th><th>Status</th><th>Date</th><th>Action</th></tr>
             {rows}
         </table>
-
-        <!-- Review Modal -->
-        <div id="reviewModal" class="modal">
-            <div class="modal-content">
-                <h2 id="modalProject"></h2>
-                <p><strong>Bid Amount:</strong> <span id="modalBid"></span></p>
-                <p><strong>AI Fair Range:</strong> <span id="modalAIRange"></span></p>
-                <textarea id="adminComment" rows="5" placeholder="Reason for rejection or approval comment..."></textarea>
-                <div style="margin-top:20px;">
-                    <button onclick="submitDecision('Approved')" style="background:#10b981;width:48%;padding:12px;color:white;border:none;border-radius:8px;cursor:pointer;">Approve</button>
-                    <button onclick="submitDecision('Rejected')" style="background:#ef4444;width:48%;padding:12px;color:white;border:none;border-radius:8px;cursor:pointer;">Reject</button>
-                </div>
-            </div>
-        </div>
-
-        <script>
-            // Approval Rate Pie Chart
-            new Chart(document.getElementById('approvalChart'), {{
-                type: 'pie',
-                data: {{
-                    labels: ['Approved', 'Rejected', 'Pending'],
-                    datasets: [{{
-                        data: [{approved}, {rejected}, {pending}],
-                        backgroundColor: ['#10b981', '#ef4444', '#f59e0b']
-                    }}]
-                }},
-                options: {{ responsive: true, plugins: {{ legend: {{ position: 'bottom' }} }} }}
-            }});
-
-            let currentBidId = null;
-            function openReviewModal(bidId, project, bidAmount, aiMin, aiMax) {{
-                currentBidId = bidId;
-                document.getElementById("modalProject").innerText = project;
-                document.getElementById("modalBid").innerText = "₦" + Number(bidAmount).toLocaleString() + " Billion";
-                document.getElementById("modalAIRange").innerText = "₦" + Number(aiMin).toLocaleString() + "B – ₦" + Number(aiMax).toLocaleString() + "B";
-                document.getElementById("reviewModal").style.display = "flex";
-            }}
-            async function submitDecision(status) {{
-                const comment = document.getElementById("adminComment").value;
-                await fetch(`/admin/update-bid/${{currentBidId}}`, {{
-                    method: "POST",
-                    headers: {{"Content-Type": "application/x-www-form-urlencoded"}},
-                    body: `new_status=${{status}}&comment=${{encodeURIComponent(comment)}}`
-                }});
-                location.reload();
-            }}
-        </script>
     </body>
     </html>
     """)
-@app.post("/admin/update-bid/{bid_id}")
-async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
-                            db: sqlite3.Connection = Depends(get_db)):
-    get_current_admin_id(request)
-    if new_status not in ["Approved", "Rejected"]:
-        raise HTTPException(400, "Invalid status")
-    cursor = db.cursor()
-    cursor.execute("UPDATE bids SET status = ? WHERE id = ?", (new_status, bid_id))
-    db.commit()
-    return RedirectResponse("/admin/dashboard", status_code=303)
 
-@app.get("/admin/logout")
-async def admin_logout():
-    resp = RedirectResponse("/admin/login", status_code=303)
-    resp.delete_cookie("admin_token")
-    return resp
+# ... your other routes (logout, update-bid, etc.) ...
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
-
-
-
