@@ -274,6 +274,48 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
     """)
 
 # ── Bid Submission (stores real AI prediction) ───────────────────────────────
+@app.get("/bid/{contract_id}", response_class=HTMLResponse)
+async def bid_form(request: Request, contract_id: int):
+    # Check if user is logged in
+    get_current_user_id(request)
+
+    if contract_id < 0 or contract_id >= len(df_bidding):
+        raise HTTPException(404, "Contract not found")
+
+    project = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
+
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Bid on {project}</title>
+        <style>
+            body {{font-family:Arial,sans-serif; background:#f0f4f8; padding:2rem; margin:0;}}
+            .card {{background:white; max-width:600px; margin:auto; padding:2.5rem; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.1);}}
+            label {{display:block; margin:1.2rem 0 0.5rem; font-weight:600;}}
+            input, textarea {{width:100%; padding:12px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box;}}
+            button {{margin-top:2rem; width:100%; padding:14px; background:#10b981; color:white; border:none; border-radius:8px; font-size:1.1rem; cursor:pointer;}}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h2>Bid for: {project}</h2>
+            <form method="post">
+                <label>Company Name</label><input name="company_name" required>
+                <label>CAC Number</label><input name="cac_number" required>
+                <label>Email</label><input type="email" name="email" required>
+                <label>Phone</label><input name="phone" required>
+                <label>Bid Amount (₦ Billion)</label><input type="number" step="0.01" min="0.01" name="bid_amount" required>
+                <label>Equipment List</label><textarea name="equipment_list" rows="4" required></textarea>
+                <label>Workforce Description</label><textarea name="workforce" rows="4" required></textarea>
+                <button type="submit">Submit Bid</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """)
+
 @app.post("/bid/{contract_id}", response_class=HTMLResponse)
 @limiter.limit("3/hour")
 async def submit_bid(request: Request, contract_id: int,
@@ -436,5 +478,6 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
