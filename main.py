@@ -171,12 +171,22 @@ async def register_page():
     <button type="submit">Register</button></form></div></body></html>"""
 
 @app.post("/register", response_class=HTMLResponse)
+from fastapi import Request   # ← make sure this is imported (already in your file)
+
+@app.post("/register", response_class=HTMLResponse)
 @limiter.limit("5/minute")
-async def register(company_name: str = Form(...), cac_number: str = Form(...),
-                   email: str = Form(...), password: str = Form(...), db: sqlite3.Connection = Depends(get_db)):
+async def register(
+    request: Request,                    # ← THIS LINE IS REQUIRED (must be first!)
+    company_name: str = Form(...),
+    cac_number: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
     email = email.strip().lower()
     if len(password) < 8:
         return HTMLResponse(register_page() + '<p style="color:red">Password too short</p>', status_code=400)
+    
     hashed = pwd_context.hash(password)
     cursor = db.cursor()
     try:
@@ -186,7 +196,6 @@ async def register(company_name: str = Form(...), cac_number: str = Form(...),
         return HTMLResponse('<h2 style="color:green;text-align:center;margin-top:120px;">Registration successful!<br><a href="/login">Login</a></h2>')
     except sqlite3.IntegrityError:
         return HTMLResponse(register_page() + '<p style="color:red">Email already registered</p>', status_code=409)
-
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Login</title>
@@ -430,3 +439,4 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
