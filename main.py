@@ -236,21 +236,29 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 
     cursor = db.cursor()
     cursor.execute("""
-        SELECT id, contract_id, company_name, bid_amount, status, submitted_at,
-               predicted_min, predicted_max
-        FROM bids
-        ORDER BY submitted_at DESC
+        SELECT b.id, b.contract_id, b.company_name, b.bid_amount, b.status, b.submitted_at,
+               b.predicted_min, b.predicted_max,
+               df.Project_name, df.description, df.terrain_type, df.estimated_length_km
+        FROM bids b
+        LEFT JOIN (SELECT ROW_NUMBER() OVER () - 1 as contract_id, * FROM df_bidding) df
+               ON b.contract_id = df.contract_id
+        ORDER BY b.submitted_at DESC
     """)
     bids = cursor.fetchall()
 
     rows = ""
+    total_bids = len(bids)
+    approved = sum(1 for b in bids if b["status"] == "Approved")
+    rejected = sum(1 for b in bids if b["status"] == "Rejected")
+
     for b in bids:
-        contract_id = b["contract_id"]
-        project_name = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
-        min_fair = b["predicted_min"] if b["predicted_min"] is not None else "N/A"
-        max_fair = b["predicted_max"] if b["predicted_max"] is not None else "N/A"
+        project_name = b["Project_name"] or f"Contract {b['contract_id']}"
+        ai_min = b["predicted_min"] or 0
+        ai_max = b["predicted_max"] or 0
+        variance = ((b["bid_amount"] - (ai_min + ai_max)/2) / ((ai_min + ai_max)/2)) * 100 if ai_max > 0 else 0
 
         status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#f59e0b"
+        variance_color = "green" if abs(variance) < 15 else "red"
 
         rows += f"""
         <tr>
@@ -258,11 +266,12 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             <td>{project_name}</td>
             <td>{b['company_name']}</td>
             <td>₦{b['bid_amount']:,.2f}B</td>
-            <td>₦{min_fair}B – ₦{max_fair}B</td>
+            <td>₦{ai_min:,.2f}B – ₦{ai_max:,.2f}B</td>
             <td style="color:{status_color};">{b['status']}</td>
+            <td style="color:{variance_color};">{variance:+.1f}%</td>
             <td>{b['submitted_at'][:10]}</td>
             <td>
-                <button onclick="openReviewModal({b['id']}, '{project_name.replace("'", "\\'")}', {b['bid_amount']}, {min_fair}, {max_fair})"
+                <button onclick="showReviewModal({b['id']}, '{project_name}', {b['bid_amount']}, {ai_min}, {ai_max})" 
                         style="background:#3b82f6;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">
                     Review Bid
                 </button>
@@ -270,35 +279,111 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
         </tr>
         """
 
-    return HTMLResponse(f"""
+    html = f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <meta charset="UTF-8">
         <title>AISEC Admin Dashboard</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
-            body {{ font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 20px; }}
-            h1 {{ color: #1e40af; text-align: center; }}
-            table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
-            th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 20px; }}
+            .header {{ background: #1e40af; color: white; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 30px; }}
+            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+            .stat-card {{ background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
+            th, td {{ padding: 16px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
             th {{ background: #1e40af; color: white; }}
-            button {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; color: white; }}
+            .action-btn {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }}
+            .approve {{ background: #10b981; color: white; }}
+            .reject {{ background: #ef4444; color: white; }}
+            .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; }}
+            .modal-content {{ background: white; margin: 5% auto; padding: 30px; width: 90%; max-width: 600px; border-radius: 12px; }}
         </style>
     </head>
     <body>
-        <h1>Admin Dashboard – All Bids</h1>
-        <a href="/admin/logout" style="float:right;color:#ef4444;">Logout</a>
+        <div class="header">
+            <h1>AISEC Admin Dashboard</h1>
+            <p>AI-Powered Contract Bidding Oversight</p>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card"><h3>{total_bids}</h3><p>Total Bids</p></div>
+            <div class="stat-card"><h3 style="color:#10b981">{approved}</h3><p>Approved</p></div>
+            <div class="stat-card"><h3 style="color:#ef4444">{rejected}</h3><p>Rejected</p></div>
+        </div>
+
         <table>
-            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>AI Fair Range</th><th>Status</th><th>Date</th><th>Action</th></tr>
+            <tr>
+                <th>ID</th>
+                <th>Project</th>
+                <th>Company</th>
+                <th>Bid Amount</th>
+                <th>AI Fair Range</th>
+                <th>Status</th>
+                <th>Variance</th>
+                <th>Date</th>
+                <th>Action</th>
+            </tr>
             {rows}
         </table>
+
+        <!-- Review Modal -->
+        <div id="reviewModal" class="modal">
+            <div class="modal-content">
+                <h2 id="modalProject"></h2>
+                <p><strong>Bid Amount:</strong> <span id="modalBid"></span></p>
+                <p><strong>AI Predicted Fair Range:</strong> <span id="modalAIRange"></span></p>
+                <textarea id="adminComment" rows="4" style="width:100%;padding:10px;margin-top:15px;" placeholder="Admin comment / reason for decision..."></textarea>
+                <br><br>
+                <button onclick="approveBid()" class="action-btn approve" style="width:48%;">Approve Bid</button>
+                <button onclick="rejectBid()" class="action-btn reject" style="width:48%;">Reject Bid</button>
+                <button onclick="closeModal()" style="margin-top:15px;width:100%;padding:12px;background:#64748b;color:white;border:none;border-radius:6px;cursor:pointer;">Cancel</button>
+            </div>
+        </div>
+
+        <script>
+            let currentBidId = null;
+
+            function showReviewModal(bidId, project, bidAmount, aiMin, aiMax) {
+                currentBidId = bidId;
+                document.getElementById("modalProject").innerText = project;
+                document.getElementById("modalBid").innerText = "₦" + Number(bidAmount).toLocaleString() + " Billion";
+                document.getElementById("modalAIRange").innerText = "₦" + Number(aiMin).toLocaleString() + "B – ₦" + Number(aiMax).toLocaleString() + "B";
+                document.getElementById("reviewModal").style.display = "block";
+            }
+
+            function closeModal() {
+                document.getElementById("reviewModal").style.display = "none";
+            }
+
+            async function approveBid() {
+                const comment = document.getElementById("adminComment").value;
+                await fetch(`/admin/update-bid/${currentBidId}`, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/x-www-form-urlencoded"},
+                    body: `new_status=Approved&comment=${encodeURIComponent(comment)}`
+                });
+                location.reload();
+            }
+
+            async function rejectBid() {
+                const comment = document.getElementById("adminComment").value;
+                await fetch(`/admin/update-bid/${currentBidId}`, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/x-www-form-urlencoded"},
+                    body: `new_status=Rejected&comment=${encodeURIComponent(comment)}`
+                });
+                location.reload();
+            }
+        </script>
     </body>
     </html>
     """)
-
 # ... your other routes (logout, update-bid, etc.) ...
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
