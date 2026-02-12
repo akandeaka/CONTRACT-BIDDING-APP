@@ -332,14 +332,14 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
 def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
     """
     Predict fair cost range using trained XGBoost model.
-    Forces all input columns to be numeric.
+    Forces ALL columns to numeric — no exceptions.
     """
     if contract_id >= len(df_bidding):
         return "Under Review", 0, 0
 
     row = df_bidding.iloc[contract_id]
 
-    # Create input with safe numeric defaults
+    # Safe numeric defaults for every feature
     terrain_map = {
         "arid savanna": 0,
         "semi-arid flat": 1,
@@ -355,7 +355,11 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
         "mangrove swamp": 11,
         "riverine floodplain": 12,
         "delta swamp": 13,
-        # Add more known values here
+        "hilly erosion-prone": 14,
+        "undulating rainforest": 15,
+        "rainforest valleys": 16,
+        "coastal mangrove": 17,
+        # Add more as you discover them in your data
     }
 
     terrain_str = str(row.get("terrain_type", "semi-arid flat")).lower().strip()
@@ -363,24 +367,28 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     input_dict = {
         "estimated_length_km": float(row.get("estimated_length_km", 100)),
-        "terrain_type": float(terrain_code),               # ← numeric
+        "terrain_type": float(terrain_code),               # already float
         "latitude": float(row.get("latitude", 0)),
         "longitude": float(row.get("longitude", 0)),
         "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
         "elevation_m": float(row.get("elevation_m", 300)),
-        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ["yes", "1", "true", "y"] else 0.0,
+        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ["yes", "1", "true", "y", "true"] else 0.0,
         "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ["yes", "1", "true", "y"] else 0.0,
     }
 
+    # Create DataFrame
     input_df = pd.DataFrame([input_dict])
 
-    # Final safety: force EVERY column to numeric
+    # Force every single column to be float (XGBoost requirement)
     input_df = input_df.astype(float)
 
-    # Optional debug (remove after testing)
-    # print("Input dtypes:\n", input_df.dtypes)
+    # Debug print (remove after success)
+    # print("Input dtypes before predict:\n", input_df.dtypes)
     # print("Input values:\n", input_df.iloc[0].to_dict())
+    print("Input DataFrame dtypes:\n", input_df.dtypes)
+print("Input DataFrame values:\n", input_df.to_dict(orient="records"))
 
+    # Predict
     predicted_value = model.predict(input_df)[0]
 
     min_fair = predicted_value * 0.88
@@ -508,4 +516,5 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
