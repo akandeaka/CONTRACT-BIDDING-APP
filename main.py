@@ -184,28 +184,42 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     row = df_bidding.iloc[contract_id]
 
+    # Prepare numeric input – everything must be number
     input_dict = {
         "estimated_length_km": float(row.get("estimated_length_km", 100)),
-        "terrain_type": str(row.get("terrain_type", "Semi-arid flat")),
         "latitude": float(row.get("latitude", 0)),
         "longitude": float(row.get("longitude", 0)),
         "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
         "elevation_m": float(row.get("elevation_m", 300)),
-        "has_bridge": int(row.get("has_bridge", 0)),
-        "is_dual_carriageway": int(row.get("is_dual_carriageway", 0)),
+        "has_bridge": int(row.get("has_bridge", 0) in [1, "Yes", True, "yes"]),
+        "is_dual_carriageway": int(row.get("is_dual_carriageway", 0) in [1, "Yes", True, "yes"]),
+        # terrain_type – simple numeric encoding
+        "terrain_type": {
+            "arid savanna": 0,
+            "semi-arid flat": 1,
+            "rainforest": 2,
+            "mangrove swamp": 3,
+            "hilly savanna": 4,
+            "flat arid": 5,
+            # add more known types
+        }.get(str(row.get("terrain_type", "")).lower().strip(), 1),  # default 1
     }
 
     input_df = pd.DataFrame([input_dict])
-    terrain_map = {"arid": 0, "semi-arid": 1, "rainforest": 2, "mangrove": 3, "hilly": 4}
-    input_df["terrain_type"] = input_df["terrain_type"].str.lower().map(terrain_map).fillna(1)
 
+    # Ensure all columns are numeric (XGBoost requirement)
+    for col in input_df.columns:
+        input_df[col] = pd.to_numeric(input_df[col], errors='coerce').fillna(0)
+
+    # Predict
     predicted_value = model.predict(input_df)[0]
+
     min_fair = predicted_value * 0.88
     max_fair = predicted_value * 1.12
+
     status = "Fair" if min_fair <= bid_amount <= max_fair else "Under Review"
 
     return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
-
 # ────────────────────────────────────────────────
 # Routes
 # ────────────────────────────────────────────────
@@ -513,3 +527,4 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
