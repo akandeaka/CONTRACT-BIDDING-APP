@@ -15,4 +15,7 @@ PyJWT>=2.8.0
 pandas>=2.0.0
 joblib>=1.2.0
 slowapi>=0.1.9
+xgboost
+
+
 
