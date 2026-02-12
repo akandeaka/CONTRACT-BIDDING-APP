@@ -343,31 +343,65 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
 
 # ── Bid Form & Submit ─────────────────────────────
 @app.get("/bid/{contract_id}", response_class=HTMLResponse)
-async def bid_form(request: Request, contract_id: int):
-    get_current_user_id(request)
-    if contract_id < 0 or contract_id >= len(df_bidding):
-        raise HTTPException(404, "Contract not found")
-    project = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
+def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
+    """
+    Predict fair cost range using trained XGBoost model
+    All input columns are forced to numeric before prediction
+    """
+    if contract_id >= len(df_bidding):
+        return "Under Review", 0, 0
 
-    return HTMLResponse(f"""
-    <!DOCTYPE html><html><head><title>Bid - {project}</title>
-    <style>body{{font-family:Arial;background:#f0f4f8;padding:2rem;}}
-    .card{{background:white;max-width:600px;margin:auto;padding:2.5rem;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,0.1);}}
-    label{{display:block;margin:1rem 0 0.5rem;font-weight:600;}} input,textarea{{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;}}
-    button{{margin-top:2rem;width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:8px;font-size:1.1rem;cursor:pointer;}}</style></head>
-    <body><div class="card"><h2>Bid for: {project}</h2>
-    <form method="post">
-      <label>Company Name</label><input name="company_name" required>
-      <label>CAC Number</label><input name="cac_number" required>
-      <label>Email</label><input type="email" name="email" required>
-      <label>Phone</label><input name="phone" required>
-      <label>Bid Amount (₦ Billion)</label><input type="number" step="0.01" name="bid_amount" required>
-      <label>Equipment List</label><textarea name="equipment_list" rows="4" required></textarea>
-      <label>Workforce</label><textarea name="workforce" rows="4" required></textarea>
-      <button type="submit">Submit Bid</button>
-    </form></div></body></html>
-    """)
+    row = df_bidding.iloc[contract_id]
 
+    # 1. Create input dictionary with safe defaults and numeric types
+    input_dict = {
+        "estimated_length_km": float(row.get("estimated_length_km", 100)),
+        "latitude": float(row.get("latitude", 0)),
+        "longitude": float(row.get("longitude", 0)),
+        "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
+        "elevation_m": float(row.get("elevation_m", 300)),
+        "has_bridge": 1 if str(row.get("has_bridge", "No")).lower() in ["yes", "1", "true"] else 0,
+        "is_dual_carriageway": 1 if str(row.get("is_dual_carriageway", "No")).lower() in ["yes", "1", "true"] else 0,
+        # terrain_type: simple numeric encoding (you can expand this map)
+        "terrain_type": {
+            "arid savanna": 0,
+            "semi-arid flat": 1,
+            "gently rolling savanna": 2,
+            "flat arid": 3,
+            "arid savanna dunes": 4,
+            "savanna plains/hills": 5,
+            "hilly savanna": 6,
+            "hilly rocky": 7,
+            "hilly forested": 8,
+            "tropical rainforest": 9,
+            "coastal sandy": 10,
+            "mangrove swamp": 11,
+            "riverine floodplain": 12,
+            "delta swamp": 13,
+            # add more as needed
+        }.get(str(row.get("terrain_type", "")).lower().strip(), 1),  # default 1
+    }
+
+    # 2. Create DataFrame
+    input_df = pd.DataFrame([input_dict])
+
+    # 3. Force ALL columns to numeric (XGBoost requirement)
+    for col in input_df.columns:
+        input_df[col] = pd.to_numeric(input_df[col], errors='coerce').fillna(0)
+
+    # 4. Optional: log for debugging (remove later)
+    # print("Input dtypes before predict:\n", input_df.dtypes)
+
+    # 5. Predict
+    predicted_value = model.predict(input_df)[0]
+
+    # 6. Create fair range (same as before)
+    min_fair = predicted_value * 0.88
+    max_fair = predicted_value * 1.12
+
+    status = "Fair" if min_fair <= bid_amount <= max_fair else "Under Review"
+
+    return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
 @app.post("/bid/{contract_id}", response_class=HTMLResponse)
 @limiter.limit("3/hour")
 async def submit_bid(request: Request, contract_id: int,
@@ -527,4 +561,5 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
