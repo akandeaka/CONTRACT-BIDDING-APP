@@ -110,19 +110,14 @@ def init_db():
             hashed_password TEXT NOT NULL
         )''')
 
-        # Use environment variable or short fallback password
-        admin_pass = os.getenv("ADMIN_PASSWORD", "AISEC2026!")
-        if len(admin_pass.encode('utf-8')) > 72:
-            admin_pass = admin_pass[:72]  # hard truncate if too long (rare)
-            print("Warning: ADMIN_PASSWORD truncated to 72 bytes")
-
         try:
             c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
-                      ("admin", pwd_context.hash(admin_pass)))
+                      ("admin", pwd_context.hash("AdminSecure2026!")))
             conn.commit()
-            print("Admin user created/updated")
         except sqlite3.IntegrityError:
-            pass  # already exists → skip
+            pass
+
+init_db()
 
 # ────────────────────────────────────────────────
 # Load contracts from Google Sheet
@@ -131,35 +126,54 @@ BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM
 
 try:
     df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
+    print("Loaded sheet with", len(df_bidding), "contracts")
+    print("Columns:", list(df_bidding.columns))
 except Exception as e:
     print(f"Failed to load Google Sheet: {e}")
     df_bidding = pd.DataFrame()
 
 # ────────────────────────────────────────────────
-# Train / Load XGBoost Model for Fair Cost Prediction
+# Train / Load XGBoost Model
 # ────────────────────────────────────────────────
 MODEL_FILE = "ai_contract_model.joblib"
 
 def train_model():
+    global model
     print("Training XGBoost model...")
 
     df = df_bidding.copy()
 
-    # Handle categorical columns
-    for col in ["terrain_type", "geopolitical_zone"]:
+    # Convert categorical to numeric
+    categorical_cols = ["terrain_type", "geopolitical_zone"]
+    for col in categorical_cols:
         if col in df.columns:
             df[col] = df[col].astype("category").cat.codes
 
-    features = ["estimated_length_km", "terrain_type", "latitude", "longitude",
-                "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"]
+    # Features (only those that exist in your sheet)
+    possible_features = [
+        "estimated_length_km", "terrain_type", "latitude", "longitude",
+        "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"
+    ]
+    features = [f for f in possible_features if f in df.columns]
 
-    # Proxy target if no real cost
-    if "boq_total_cost" not in df.columns:
-        print("No 'boq_total_cost' column → creating proxy target")
-        df["boq_total_cost"] = df["estimated_length_km"] * 1_200_000_000
+    if not features:
+        print("ERROR: No valid features found in sheet. Using dummy model.")
+        model = xgb.XGBRegressor()  # dummy
+        return model
+
+    # Target: use proxy if no real cost
+    target_col = "boq_total_cost"
+    if target_col not in df.columns:
+        print("No real cost column → using proxy target (length * 1.2B)")
+        df[target_col] = df["estimated_length_km"] * 1_200_000_000
 
     X = df[features].fillna(0)
-    y = df["boq_total_cost"]
+    y = df[target_col]
+
+    if len(X) < 10:
+        print("WARNING: Too few rows to train. Using dummy model.")
+        model = xgb.XGBRegressor()
+        return model
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -171,6 +185,7 @@ def train_model():
         colsample_bytree=0.8,
         random_state=42
     )
+
     model.fit(X_train, y_train)
 
     preds = model.predict(X_test)
@@ -188,7 +203,7 @@ except FileNotFoundError:
     model = train_model()
 
 # ────────────────────────────────────────────────
-# Real AI Prediction
+# Real AI Prediction (robust numeric conversion)
 # ────────────────────────────────────────────────
 def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
     if contract_id >= len(df_bidding):
@@ -196,7 +211,7 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     row = df_bidding.iloc[contract_id]
 
-    # Create numeric input
+    # Safe numeric input
     input_dict = {
         "estimated_length_km": float(row.get("estimated_length_km", 100)),
         "latitude": float(row.get("latitude", 0)),
@@ -230,14 +245,9 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     input_df = pd.DataFrame([input_dict])
 
-    # Force all columns to numeric
-    input_df = input_df.astype(float)
+    # Force numeric
+    input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
 
-    # Debug print (remove after successful deploy)
-    print(f"Contract {contract_id} input dtypes:\n{input_df.dtypes}")
-    print(f"Contract {contract_id} input values:\n{input_df.iloc[0].to_dict()}")
-
-    # Predict
     predicted_value = model.predict(input_df)[0]
 
     min_fair = predicted_value * 0.88
@@ -248,195 +258,11 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
     return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
 
 # ────────────────────────────────────────────────
-# Routes
+# Routes (only dashboard part shown – keep your other routes)
 # ────────────────────────────────────────────────
 
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    return RedirectResponse("/login", status_code=303)
+# ... your register, login, contracts, bid routes ...
 
-# ── Register ─────────────────────────────────────
-@app.get("/register", response_class=HTMLResponse)
-async def register_page():
-    return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Register</title>
-    <style>body{font-family:Arial;background:#f0f4f8;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
-    .card{background:white;padding:2.5rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);width:420px;}
-    input,button{width:100%;padding:12px;margin:10px 0;border:1px solid #d1d5db;border-radius:6px;}
-    button{background:#10b981;color:white;border:none;font-weight:bold;cursor:pointer;}</style></head>
-    <body><div class="card"><h2>Create Account</h2><form method="post">
-    <input name="company_name" placeholder="Company Name" required>
-    <input name="cac_number" placeholder="CAC Number" required>
-    <input type="email" name="email" placeholder="Email" required>
-    <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Register</button></form></div></body></html>"""
-
-@app.post("/register", response_class=HTMLResponse)
-@limiter.limit("5/minute")
-async def register(request: Request, company_name: str = Form(...), cac_number: str = Form(...),
-                   email: str = Form(...), password: str = Form(...), db: sqlite3.Connection = Depends(get_db)):
-    email = email.strip().lower()
-    if len(password) < 8:
-        return HTMLResponse(register_page() + '<p style="color:red">Password too short</p>', status_code=400)
-    hashed = pwd_context.hash(password)
-    cursor = db.cursor()
-    try:
-        cursor.execute("INSERT INTO users (email, hashed_password, company_name, cac_number) VALUES (?,?,?,?)",
-                       (email, hashed, company_name.strip(), cac_number.strip()))
-        db.commit()
-        return HTMLResponse('<h2 style="color:green;text-align:center;margin-top:120px;">Registration successful!<br><a href="/login">Login</a></h2>')
-    except sqlite3.IntegrityError:
-        return HTMLResponse(register_page() + '<p style="color:red">Email already registered</p>', status_code=409)
-
-# ── Login ────────────────────────────────────────
-@app.get("/login", response_class=HTMLResponse)
-async def login_page():
-    return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Login</title>
-    <style>body{font-family:Arial;background:#f0f4f8;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
-    .card{background:white;padding:2.5rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);width:380px;}
-    input,button{width:100%;padding:12px;margin:10px 0;border:1px solid #d1d5db;border-radius:6px;}
-    button{background:#2563eb;color:white;border:none;font-weight:bold;cursor:pointer;}</style></head>
-    <body><div class="card"><h2>Login</h2><form method="post">
-    <input type="email" name="email" placeholder="Email" required>
-    <input type="password" name="password" placeholder="Password" required>
-    <button type="submit">Sign In</button></form></div></body></html>"""
-
-@app.post("/login", response_class=HTMLResponse)
-@limiter.limit("10/minute")
-async def login_user(request: Request, email: str = Form(...), password: str = Form(...),
-                     db: sqlite3.Connection = Depends(get_db)):
-    email = email.strip().lower()
-    cursor = db.cursor()
-    cursor.execute("SELECT id, hashed_password FROM users WHERE email = ?", (email,))
-    user = cursor.fetchone()
-    if not user or not pwd_context.verify(password, user["hashed_password"]):
-        return HTMLResponse(login_page() + '<p style="color:red">Invalid credentials</p>', status_code=401)
-
-    token = create_access_token(str(user["id"]))
-    resp = RedirectResponse("/contracts", status_code=303)
-    resp.set_cookie(key="session_token", value=token, httponly=True, secure=True, samesite="lax",
-                    max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
-    return resp
-
-@app.get("/logout")
-async def logout():
-    resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie("session_token")
-    return resp
-
-# ── Contracts List ───────────────────────────────
-@app.get("/contracts", response_class=HTMLResponse)
-@limiter.limit("20/minute")
-async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_db)):
-    user_id = get_current_user_id(request)
-
-    cursor = db.cursor()
-    cursor.execute("SELECT contract_id FROM bids WHERE user_id = ?", (user_id,))
-    already_bid = {r["contract_id"] for r in cursor.fetchall()}
-
-    available = []
-    for idx, row in df_bidding.iterrows():
-        if idx not in already_bid:
-            available.append({
-                "id": idx,
-                "project_name": row.get("Project_name", f"Contract {idx}"),
-                "description": row.get("Description", "No description available"),
-                "location": f"Lat: {row.get('latitude','N/A')}, Lon: {row.get('longitude','N/A')}",
-                "terrain": row.get("terrain_type", "N/A"),
-                "length_km": row.get("estimated_length_km", "N/A"),
-            })
-
-    if not available:
-        return HTMLResponse("<h2 style='text-align:center;margin-top:120px;'>No contracts available.</h2>")
-
-    items = "".join(f"""
-        <div style="border:1px solid #d1d5db;border-radius:8px;padding:1.5rem;margin-bottom:1.5rem;background:white;">
-            <h3>{c['project_name']}</h3>
-            <p><strong>Description:</strong> {c['description']}</p>
-            <p><strong>Location:</strong> {c['location']}</p>
-            <p><strong>Terrain:</strong> {c['terrain']} • Length: {c['length_km']} km</p>
-            <a href="/bid/{c['id']}" style="color:#2563eb;font-weight:bold;">→ Place Bid</a>
-        </div>
-    """ for c in available)
-
-    return HTMLResponse(f"""
-    <!DOCTYPE html><html><head><title>Available Contracts</title>
-    <style>body{{font-family:Arial;background:#f8fafc;padding:2rem;}} h1{{color:#1e40af;}} .container{{max-width:900px;margin:auto;}}</style>
-    </head><body><div class="container">
-        <h1>Available Contracts</h1>
-        <a href="/logout" style="float:right;color:#ef4444;">Logout</a>
-        {items}
-    </div></body></html>
-    """)
-
-# ── Bid Form ─────────────────────────────────────────────────────────────
-@app.get("/bid/{contract_id}", response_class=HTMLResponse)
-async def bid_form(request: Request, contract_id: int):
-    get_current_user_id(request)
-    if contract_id < 0 or contract_id >= len(df_bidding):
-        raise HTTPException(404, "Contract not found")
-    project = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
-
-    return HTMLResponse(f"""
-    <!DOCTYPE html><html><head><title>Bid - {project}</title>
-    <style>body{{font-family:Arial;background:#f0f4f8;padding:2rem;}}
-    .card{{background:white;max-width:600px;margin:auto;padding:2.5rem;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,0.1);}}
-    label{{display:block;margin:1rem 0 0.5rem;font-weight:600;}} input,textarea{{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;}}
-    button{{margin-top:2rem;width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:8px;font-size:1.1rem;cursor:pointer;}}</style></head>
-    <body><div class="card"><h2>Bid for: {project}</h2>
-    <form method="post">
-      <label>Company Name</label><input name="company_name" required>
-      <label>CAC Number</label><input name="cac_number" required>
-      <label>Email</label><input type="email" name="email" required>
-      <label>Phone</label><input name="phone" required>
-      <label>Bid Amount (₦ Billion)</label><input type="number" step="0.01" name="bid_amount" required>
-      <label>Equipment List</label><textarea name="equipment_list" rows="4" required></textarea>
-      <label>Workforce</label><textarea name="workforce" rows="4" required></textarea>
-      <button type="submit">Submit Bid</button>
-    </form></div></body></html>
-    """)
-
-# ── Bid Submission ───────────────────────────────────────────────────────────
-@app.post("/bid/{contract_id}", response_class=HTMLResponse)
-@limiter.limit("3/hour")
-async def submit_bid(request: Request, contract_id: int,
-                     company_name: str = Form(...), cac_number: str = Form(...),
-                     email: str = Form(...), phone: str = Form(...),
-                     bid_amount: float = Form(...),
-                     equipment_list: str = Form(...), workforce: str = Form(...),
-                     db: sqlite3.Connection = Depends(get_db)):
-    user_id = get_current_user_id(request)
-    if contract_id < 0 or contract_id >= len(df_bidding):
-        raise HTTPException(404, "Contract not found")
-    if bid_amount <= 0:
-        raise HTTPException(400, "Bid amount must be positive")
-
-    status, min_fair, max_fair = is_fair_bid(contract_id, bid_amount)
-
-    cursor = db.cursor()
-    cursor.execute("""
-        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone,
-                          bid_amount, equipment_list, workforce, status, predicted_min, predicted_max)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (contract_id, user_id, company_name.strip(), cac_number.strip(), email.strip(), phone.strip(),
-          bid_amount, equipment_list.strip(), workforce.strip(), status, min_fair, max_fair))
-    db.commit()
-
-    project_name = df_bidding.iloc[contract_id].get("Project_name", "Unknown project")
-
-    return HTMLResponse(f"""
-    <!DOCTYPE html><html><head><title>Success</title>
-    <style>body{{font-family:Arial;background:#f0fdf4;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}}
-    .card{{background:white;padding:3rem;border-radius:16px;box-shadow:0 10px 30px rgba(16,185,129,0.25);max-width:600px;text-align:center;}}
-    h1{{color:#065f46;}} .btn{{display:inline-block;padding:14px 32px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:2rem;}}</style></head>
-    <body><div class="card">
-      <h1>✓ Bid Submitted Successfully</h1>
-      <p>Your bid for <strong>{project_name}</strong> of <strong>₦{bid_amount:,.2f} Billion</strong> has been received.</p>
-      <p>We will review it shortly.</p>
-      <a href="/contracts" class="btn">Back to Contracts</a>
-    </div></body></html>
-    """)
-
-# ── Admin Dashboard ──────────────────────────────────────────────────────────
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
     get_current_admin_id(request)
@@ -489,8 +315,6 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
             th {{ background: #1e40af; color: white; }}
             button {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; color: white; }}
-            .modal {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }}
-            .modal-content {{ background: white; padding: 30px; border-radius: 16px; width: 90%; max-width: 600px; }}
         </style>
     </head>
     <body>
@@ -500,63 +324,12 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>AI Fair Range</th><th>Status</th><th>Date</th><th>Action</th></tr>
             {rows}
         </table>
-
-        <!-- Review Modal -->
-        <div id="reviewModal" class="modal">
-            <div class="modal-content">
-                <h2 id="modalProject"></h2>
-                <p><strong>Bid Amount:</strong> <span id="modalBid"></span></p>
-                <p><strong>AI Fair Range:</strong> <span id="modalAIRange"></span></p>
-                <textarea id="adminComment" rows="5" style="width:100%;margin:15px 0;padding:12px;" placeholder="Reason for rejection or approval comment..."></textarea>
-                <button onclick="submitDecision('Approved')" style="background:#10b981;width:48%;padding:12px;color:white;border:none;border-radius:8px;cursor:pointer;">Approve</button>
-                <button onclick="submitDecision('Rejected')" style="background:#ef4444;width:48%;padding:12px;color:white;border:none;border-radius:8px;cursor:pointer;">Reject</button>
-            </div>
-        </div>
-
-        <script>
-            let currentBidId = null;
-            function openReviewModal(bidId, project, bidAmount, aiMin, aiMax) {{
-                currentBidId = bidId;
-                document.getElementById("modalProject").innerText = project;
-                document.getElementById("modalBid").innerText = "₦" + Number(bidAmount).toLocaleString() + " Billion";
-                document.getElementById("modalAIRange").innerText = "₦" + Number(aiMin).toLocaleString() + "B – ₦" + Number(aiMax).toLocaleString() + "B";
-                document.getElementById("reviewModal").style.display = "flex";
-            }}
-            async function submitDecision(status) {{
-                const comment = document.getElementById("adminComment").value;
-                await fetch(`/admin/update-bid/${{currentBidId}}`, {{
-                    method: "POST",
-                    headers: {{"Content-Type": "application/x-www-form-urlencoded"}},
-                    body: `new_status=${{status}}&comment=${{encodeURIComponent(comment)}}`
-                }});
-                location.reload();
-            }}
-        </script>
     </body>
     </html>
     """)
 
-@app.post("/admin/update-bid/{bid_id}")
-async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
-                            db: sqlite3.Connection = Depends(get_db)):
-    get_current_admin_id(request)
-    if new_status not in ["Approved", "Rejected"]:
-        raise HTTPException(400, "Invalid status")
-    cursor = db.cursor()
-    cursor.execute("UPDATE bids SET status = ? WHERE id = ?", (new_status, bid_id))
-    db.commit()
-    return RedirectResponse("/admin/dashboard", status_code=303)
-
-@app.get("/admin/logout")
-async def admin_logout():
-    resp = RedirectResponse("/admin/login", status_code=303)
-    resp.delete_cookie("admin_token")
-    return resp
+# ... your other admin routes ...
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
-
-
