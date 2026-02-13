@@ -126,22 +126,21 @@ BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM
 
 try:
     df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
-    print("Loaded sheet with", len(df_bidding), "contracts")
-    print("Columns:", list(df_bidding.columns))
 except Exception as e:
     print(f"Failed to load Google Sheet: {e}")
     df_bidding = pd.DataFrame()
 
 # ────────────────────────────────────────────────
-# Train / Load Real XGBoost Model
+# Train / Load XGBoost Model for Fair Cost Prediction
 # ────────────────────────────────────────────────
 MODEL_FILE = "ai_contract_model.joblib"
 
 def train_model():
-    global model
     print("Training XGBoost model...")
 
     df = df_bidding.copy()
+
+    # Handle categorical columns
     for col in ["terrain_type", "geopolitical_zone"]:
         if col in df.columns:
             df[col] = df[col].astype("category").cat.codes
@@ -149,7 +148,9 @@ def train_model():
     features = ["estimated_length_km", "terrain_type", "latitude", "longitude",
                 "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"]
 
+    # Proxy target if no real cost
     if "boq_total_cost" not in df.columns:
+        print("No 'boq_total_cost' column → creating proxy target")
         df["boq_total_cost"] = df["estimated_length_km"] * 1_200_000_000
 
     X = df[features].fillna(0)
@@ -157,8 +158,14 @@ def train_model():
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    model = xgb.XGBRegressor(n_estimators=500, learning_rate=0.05, max_depth=6,
-                             subsample=0.8, colsample_bytree=0.8, random_state=42)
+    model = xgb.XGBRegressor(
+        n_estimators=500,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42
+    )
     model.fit(X_train, y_train)
 
     preds = model.predict(X_test)
@@ -184,24 +191,48 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     row = df_bidding.iloc[contract_id]
 
+    # Create numeric input
     input_dict = {
         "estimated_length_km": float(row.get("estimated_length_km", 100)),
-        "terrain_type": str(row.get("terrain_type", "Semi-arid flat")),
         "latitude": float(row.get("latitude", 0)),
         "longitude": float(row.get("longitude", 0)),
         "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
         "elevation_m": float(row.get("elevation_m", 300)),
-        "has_bridge": int(row.get("has_bridge", 0)),
-        "is_dual_carriageway": int(row.get("is_dual_carriageway", 0)),
+        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ['yes', '1', 'true'] else 0.0,
+        "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ['yes', '1', 'true'] else 0.0,
+        "terrain_type": float({
+            "arid savanna": 0,
+            "semi-arid flat": 1,
+            "gently rolling savanna": 2,
+            "flat arid": 3,
+            "arid savanna dunes": 4,
+            "savanna plains/hills": 5,
+            "hilly savanna": 6,
+            "hilly rocky": 7,
+            "hilly forested": 8,
+            "tropical rainforest": 9,
+            "coastal sandy": 10,
+            "mangrove swamp": 11,
+            "riverine floodplain": 12,
+            "delta swamp": 13,
+            "hilly erosion-prone": 14,
+            "undulating rainforest": 15,
+            "rainforest valleys": 16,
+            "coastal mangrove": 17,
+            "rainforest hills": 18,
+        }.get(str(row.get("terrain_type", "semi-arid flat")).lower().strip(), 1)),
     }
 
     input_df = pd.DataFrame([input_dict])
-    terrain_map = {"arid": 0, "semi-arid": 1, "rainforest": 2, "mangrove": 3, "hilly": 4}
-    input_df["terrain_type"] = input_df["terrain_type"].str.lower().map(terrain_map).fillna(1)
+
+    # Force all to float
+    input_df = input_df.astype(float)
 
     predicted_value = model.predict(input_df)[0]
+
     min_fair = predicted_value * 0.88
     max_fair = predicted_value * 1.12
+
     status = "Fair" if min_fair <= bid_amount <= max_fair else "Under Review"
 
     return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
@@ -214,7 +245,7 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 async def root():
     return RedirectResponse("/login", status_code=303)
 
-# Register & Login (clean)
+# ── Register ─────────────────────────────────────
 @app.get("/register", response_class=HTMLResponse)
 async def register_page():
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Register</title>
@@ -246,7 +277,7 @@ async def register(request: Request, company_name: str = Form(...), cac_number: 
     except sqlite3.IntegrityError:
         return HTMLResponse(register_page() + '<p style="color:red">Email already registered</p>', status_code=409)
 
-# Login routes (same as before)
+# ── Login ────────────────────────────────────────
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
     return """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Login</title>
@@ -327,77 +358,75 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
     </div></body></html>
     """)
 
-# ── Bid Form & Submit ─────────────────────────────
+# ── Bid Form ─────────────────────────────────────────────────────────────
 @app.get("/bid/{contract_id}", response_class=HTMLResponse)
-def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
-    """
-    Predict fair cost range using trained XGBoost model.
-    Forces ALL columns to numeric — no exceptions.
-    """
-    if contract_id >= len(df_bidding):
-        return "Under Review", 0, 0
+async def bid_form(request: Request, contract_id: int):
+    get_current_user_id(request)
+    if contract_id < 0 or contract_id >= len(df_bidding):
+        raise HTTPException(404, "Contract not found")
+    project = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
 
-    row = df_bidding.iloc[contract_id]
+    return HTMLResponse(f"""
+    <!DOCTYPE html><html><head><title>Bid - {project}</title>
+    <style>body{{font-family:Arial;background:#f0f4f8;padding:2rem;}}
+    .card{{background:white;max-width:600px;margin:auto;padding:2.5rem;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,0.1);}}
+    label{{display:block;margin:1rem 0 0.5rem;font-weight:600;}} input,textarea{{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;}}
+    button{{margin-top:2rem;width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:8px;font-size:1.1rem;cursor:pointer;}}</style></head>
+    <body><div class="card"><h2>Bid for: {project}</h2>
+    <form method="post">
+      <label>Company Name</label><input name="company_name" required>
+      <label>CAC Number</label><input name="cac_number" required>
+      <label>Email</label><input type="email" name="email" required>
+      <label>Phone</label><input name="phone" required>
+      <label>Bid Amount (₦ Billion)</label><input type="number" step="0.01" name="bid_amount" required>
+      <label>Equipment List</label><textarea name="equipment_list" rows="4" required></textarea>
+      <label>Workforce</label><textarea name="workforce" rows="4" required></textarea>
+      <button type="submit">Submit Bid</button>
+    </form></div></body></html>
+    """)
 
-    # Safe numeric defaults for every feature
-    terrain_map = {
-        "arid savanna": 0,
-        "semi-arid flat": 1,
-        "gently rolling savanna": 2,
-        "flat arid": 3,
-        "arid savanna dunes": 4,
-        "savanna plains/hills": 5,
-        "hilly savanna": 6,
-        "hilly rocky": 7,
-        "hilly forested": 8,
-        "tropical rainforest": 9,
-        "coastal sandy": 10,
-        "mangrove swamp": 11,
-        "riverine floodplain": 12,
-        "delta swamp": 13,
-        "hilly erosion-prone": 14,
-        "undulating rainforest": 15,
-        "rainforest valleys": 16,
-        "coastal mangrove": 17,
-        # Add more as you discover them in your data
-    }
+# ── Bid Submission ───────────────────────────────────────────────────────────
+@app.post("/bid/{contract_id}", response_class=HTMLResponse)
+@limiter.limit("3/hour")
+async def submit_bid(request: Request, contract_id: int,
+                     company_name: str = Form(...), cac_number: str = Form(...),
+                     email: str = Form(...), phone: str = Form(...),
+                     bid_amount: float = Form(...),
+                     equipment_list: str = Form(...), workforce: str = Form(...),
+                     db: sqlite3.Connection = Depends(get_db)):
+    user_id = get_current_user_id(request)
+    if contract_id < 0 or contract_id >= len(df_bidding):
+        raise HTTPException(404, "Contract not found")
+    if bid_amount <= 0:
+        raise HTTPException(400, "Bid amount must be positive")
 
-    terrain_str = str(row.get("terrain_type", "semi-arid flat")).lower().strip()
-    terrain_code = terrain_map.get(terrain_str, 1)  # default to 1 if unknown
+    status, min_fair, max_fair = is_fair_bid(contract_id, bid_amount)
 
-    input_dict = {
-        "estimated_length_km": float(row.get("estimated_length_km", 100)),
-        "terrain_type": float(terrain_code),               # already float
-        "latitude": float(row.get("latitude", 0)),
-        "longitude": float(row.get("longitude", 0)),
-        "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
-        "elevation_m": float(row.get("elevation_m", 300)),
-        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ["yes", "1", "true", "y", "true"] else 0.0,
-        "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ["yes", "1", "true", "y"] else 0.0,
-    }
+    cursor = db.cursor()
+    cursor.execute("""
+        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone,
+                          bid_amount, equipment_list, workforce, status, predicted_min, predicted_max)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (contract_id, user_id, company_name.strip(), cac_number.strip(), email.strip(), phone.strip(),
+          bid_amount, equipment_list.strip(), workforce.strip(), status, min_fair, max_fair))
+    db.commit()
 
-    # Create DataFrame
-    input_df = pd.DataFrame([input_dict])
+    project_name = df_bidding.iloc[contract_id].get("Project_name", "Unknown project")
 
-    # Force every single column to be float (XGBoost requirement)
-    input_df = input_df.astype(float)
+    return HTMLResponse(f"""
+    <!DOCTYPE html><html><head><title>Success</title>
+    <style>body{{font-family:Arial;background:#f0fdf4;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}}
+    .card{{background:white;padding:3rem;border-radius:16px;box-shadow:0 10px 30px rgba(16,185,129,0.25);max-width:600px;text-align:center;}}
+    h1{{color:#065f46;}} .btn{{display:inline-block;padding:14px 32px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:2rem;}}</style></head>
+    <body><div class="card">
+      <h1>✓ Bid Submitted Successfully</h1>
+      <p>Your bid for <strong>{project_name}</strong> of <strong>₦{bid_amount:,.2f} Billion</strong> has been received.</p>
+      <p>We will review it shortly.</p>
+      <a href="/contracts" class="btn">Back to Contracts</a>
+    </div></body></html>
+    """)
 
-    # Debug print (remove after success)
-    # print("Input dtypes before predict:\n", input_df.dtypes)
-    # print("Input values:\n", input_df.iloc[0].to_dict())
-    print("Input DataFrame dtypes:\n", input_df.dtypes)
-print("Input DataFrame values:\n", input_df.to_dict(orient="records"))
-
-    # Predict
-    predicted_value = model.predict(input_df)[0]
-
-    min_fair = predicted_value * 0.88
-    max_fair = predicted_value * 1.12
-
-    status = "Fair" if min_fair <= bid_amount <= max_fair else "Under Review"
-
-    return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
-# ── Admin Dashboard (Clean & Functional) ─────────────────────────────────────
+# ── Admin Dashboard ──────────────────────────────────────────────────────────
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
     get_current_admin_id(request)
@@ -431,7 +460,7 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             <td>
                 <button onclick="openReviewModal({b['id']}, '{project_name.replace("'", "\\'")}', {b['bid_amount']}, {min_fair}, {max_fair})"
                         style="background:#3b82f6;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">
-                    Review
+                    Review Bid
                 </button>
             </td>
         </tr>
@@ -450,6 +479,8 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
             th {{ background: #1e40af; color: white; }}
             button {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; color: white; }}
+            .modal {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }}
+            .modal-content {{ background: white; padding: 30px; border-radius: 16px; width: 90%; max-width: 600px; }}
         </style>
     </head>
     <body>
@@ -459,42 +490,41 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
             <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>AI Fair Range</th><th>Status</th><th>Date</th><th>Action</th></tr>
             {rows}
         </table>
+
+        <!-- Review Modal -->
+        <div id="reviewModal" class="modal">
+            <div class="modal-content">
+                <h2 id="modalProject"></h2>
+                <p><strong>Bid Amount:</strong> <span id="modalBid"></span></p>
+                <p><strong>AI Fair Range:</strong> <span id="modalAIRange"></span></p>
+                <textarea id="adminComment" rows="5" style="width:100%;margin:15px 0;padding:12px;" placeholder="Reason for rejection or approval comment..."></textarea>
+                <button onclick="submitDecision('Approved')" style="background:#10b981;width:48%;padding:12px;color:white;border:none;border-radius:8px;cursor:pointer;">Approve</button>
+                <button onclick="submitDecision('Rejected')" style="background:#ef4444;width:48%;padding:12px;color:white;border:none;border-radius:8px;cursor:pointer;">Reject</button>
+            </div>
+        </div>
+
+        <script>
+            let currentBidId = null;
+            function openReviewModal(bidId, project, bidAmount, aiMin, aiMax) {{
+                currentBidId = bidId;
+                document.getElementById("modalProject").innerText = project;
+                document.getElementById("modalBid").innerText = "₦" + Number(bidAmount).toLocaleString() + " Billion";
+                document.getElementById("modalAIRange").innerText = "₦" + Number(aiMin).toLocaleString() + "B – ₦" + Number(aiMax).toLocaleString() + "B";
+                document.getElementById("reviewModal").style.display = "flex";
+            }}
+            async function submitDecision(status) {{
+                const comment = document.getElementById("adminComment").value;
+                await fetch(`/admin/update-bid/${{currentBidId}}`, {{
+                    method: "POST",
+                    headers: {{"Content-Type": "application/x-www-form-urlencoded"}},
+                    body: `new_status=${{status}}&comment=${{encodeURIComponent(comment)}}`
+                }});
+                location.reload();
+            }}
+        </script>
     </body>
     </html>
     """)
-
-# ── Admin Login ───────────────────────────────────────────────────────────────
-@app.get("/admin/login", response_class=HTMLResponse)
-async def admin_login_page():
-    return """
-    <!DOCTYPE html><html><head><title>Admin Login</title>
-    <style>body{font-family:Arial;background:#eff6ff;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
-    .card{background:white;padding:3rem;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.15);width:400px;}
-    input,button{width:100%;padding:14px;margin:12px 0;border:1px solid #d1d5db;border-radius:8px;}
-    button{background:#2563eb;color:white;border:none;font-weight:bold;cursor:pointer;}</style></head>
-    <body><div class="card"><h2>Admin Login</h2>
-    <form method="post">
-      <input type="text" name="username" placeholder="Username" required>
-      <input type="password" name="password" placeholder="Password" required>
-      <button type="submit">Login</button>
-    </form></div></body></html>
-    """
-
-@app.post("/admin/login", response_class=HTMLResponse)
-async def admin_login(username: str = Form(...), password: str = Form(...),
-                      db: sqlite3.Connection = Depends(get_db)):
-    cursor = db.cursor()
-    cursor.execute("SELECT id, hashed_password FROM admins WHERE username = ?", (username,))
-    admin = cursor.fetchone()
-
-    if not admin or not pwd_context.verify(password, admin["hashed_password"]):
-        return HTMLResponse((await admin_login_page()) + '<p style="color:red;text-align:center;margin-top:1.5rem;">Invalid credentials</p>', status_code=401)
-
-    token = create_access_token(str(admin["id"]))
-    resp = RedirectResponse("/admin/dashboard", status_code=303)
-    resp.set_cookie(key="admin_token", value=token, httponly=True, secure=True, samesite="lax",
-                    max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
-    return resp
 
 @app.post("/admin/update-bid/{bid_id}")
 async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
@@ -516,5 +546,3 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
