@@ -149,35 +149,37 @@ def train_model():
 
     df = df_bidding.copy()
 
-    # Convert categorical to numeric
-    categorical_cols = ["terrain_type", "geopolitical_zone"]
-    for col in categorical_cols:
-        if col in df.columns:
-            df[col] = df[col].astype("category").cat.codes
+    # Convert categorical columns safely
+    if "terrain_type" in df.columns:
+        df["terrain_type"] = df["terrain_type"].astype("category").cat.codes
 
-    # Features (only those that exist in your sheet)
-    possible_features = [
-        "estimated_length_km", "terrain_type", "latitude", "longitude",
-        "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"
+    if "geopolitical_zone" in df.columns:
+        df["geopolitical_zone"] = df["geopolitical_zone"].astype("category").cat.codes
+
+    # Only include features that actually exist in your sheet
+    available_features = [
+        col for col in [
+            "estimated_length_km", "terrain_type", "latitude", "longitude",
+            "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"
+        ] if col in df.columns
     ]
-    features = [f for f in possible_features if f in df.columns]
 
-    if not features:
-        print("ERROR: No valid features found in sheet. Using dummy model.")
-        model = xgb.XGBRegressor()  # dummy
+    if not available_features:
+        print("ERROR: No valid features found. Cannot train model.")
+        model = xgb.XGBRegressor()  # dummy fallback
         return model
 
-    # Target: use proxy if no real cost
+    # Target: proxy if no real cost
     target_col = "boq_total_cost"
     if target_col not in df.columns:
-        print("No real cost column → using proxy target (length * 1.2B)")
+        print("No real cost column → using proxy target")
         df[target_col] = df["estimated_length_km"] * 1_200_000_000
 
-    X = df[features].fillna(0)
+    X = df[available_features].apply(pd.to_numeric, errors='coerce').fillna(0)
     y = df[target_col]
 
     if len(X) < 10:
-        print("WARNING: Too few rows to train. Using dummy model.")
+        print("WARNING: Too few rows for training. Using dummy model.")
         model = xgb.XGBRegressor()
         return model
 
@@ -189,7 +191,8 @@ def train_model():
         max_depth=6,
         subsample=0.8,
         colsample_bytree=0.8,
-        random_state=42
+        random_state=42,
+        enable_categorical=True  # ← important if you have category columns
     )
 
     model.fit(X_train, y_train)
@@ -200,14 +203,6 @@ def train_model():
 
     joblib.dump(model, MODEL_FILE)
     return model
-
-# Load or train
-try:
-    model = joblib.load(MODEL_FILE)
-    print("Loaded existing XGBoost model")
-except FileNotFoundError:
-    model = train_model()
-
 # ────────────────────────────────────────────────
 # Real AI Prediction (robust numeric conversion)
 # ────────────────────────────────────────────────
@@ -217,15 +212,15 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     row = df_bidding.iloc[contract_id]
 
-    # Safe numeric input
+    # Build input with explicit float conversion
     input_dict = {
         "estimated_length_km": float(row.get("estimated_length_km", 100)),
         "latitude": float(row.get("latitude", 0)),
         "longitude": float(row.get("longitude", 0)),
         "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
         "elevation_m": float(row.get("elevation_m", 300)),
-        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ['yes', '1', 'true'] else 0.0,
-        "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ['yes', '1', 'true'] else 0.0,
+        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ["yes", "y", "1", "true"] else 0.0,
+        "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ["yes", "y", "1", "true"] else 0.0,
         "terrain_type": float({
             "arid savanna": 0,
             "semi-arid flat": 1,
@@ -251,8 +246,11 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     input_df = pd.DataFrame([input_dict])
 
-    # Force numeric
+    # Force numeric – this line eliminates the dtype error
     input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
+
+    # Optional debug (remove after success)
+    # print(f"Contract {contract_id} dtypes:\n{input_df.dtypes}")
 
     predicted_value = model.predict(input_df)[0]
 
@@ -262,7 +260,6 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
     status = "Fair" if min_fair <= bid_amount <= max_fair else "Under Review"
 
     return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
-
 # ────────────────────────────────────────────────
 # Routes (only dashboard part shown – keep your other routes)
 # ────────────────────────────────────────────────
@@ -339,6 +336,7 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
