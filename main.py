@@ -110,14 +110,19 @@ def init_db():
             hashed_password TEXT NOT NULL
         )''')
 
+        # Use environment variable or short fallback password
+        admin_pass = os.getenv("ADMIN_PASSWORD", "AISEC2026!")
+        if len(admin_pass.encode('utf-8')) > 72:
+            admin_pass = admin_pass[:72]  # hard truncate if too long (rare)
+            print("Warning: ADMIN_PASSWORD truncated to 72 bytes")
+
         try:
             c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
-                      ("admin", pwd_context.hash("AdminSecure2026!")))
+                      ("admin", pwd_context.hash(admin_pass)))
             conn.commit()
+            print("Admin user created/updated")
         except sqlite3.IntegrityError:
-            pass
-
-init_db()
+            pass  # already exists → skip
 
 # ────────────────────────────────────────────────
 # Load contracts from Google Sheet
@@ -546,3 +551,4 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
