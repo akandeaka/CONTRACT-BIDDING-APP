@@ -362,9 +362,10 @@ async def register_page():
     </html>
     """
     @app.post("/register", response_class=HTMLResponse)
-@limiter.limit("5/minute")  # optional but good for preventing spam
+@app.post("/register", response_class=HTMLResponse)
+@limiter.limit("5/minute")  # ← no indent, directly under @app.post
 async def register(
-    request: Request,  # required for limiter
+    request: Request,
     company_name: str = Form(...),
     cac_number: str = Form(...),
     email: str = Form(...),
@@ -391,9 +392,7 @@ async def register(
         """)
     except sqlite3.IntegrityError:
         return HTMLResponse(register_page() + '<p style="color:red; text-align:center;">Email already registered</p>', status_code=409)
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
