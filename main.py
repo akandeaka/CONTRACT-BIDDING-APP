@@ -110,12 +110,13 @@ def init_db():
             hashed_password TEXT NOT NULL
         )''')
 
-        # Use environment variable with short fallback (avoids bcrypt limit)
+        # Force short password
         admin_password = os.getenv("ADMIN_PASSWORD", "AISEC2026!")
-        # Safety truncate (bcrypt max 72 bytes)
-        if len(admin_password.encode('utf-8')) > 72:
-            admin_password = admin_password[:72]
-            print("Warning: ADMIN_PASSWORD was truncated to 72 bytes due to bcrypt limit")
+        admin_password_bytes = admin_password.encode('utf-8')
+        if len(admin_password_bytes) > 72:
+            admin_password_bytes = admin_password_bytes[:72]
+            admin_password = admin_password_bytes.decode('utf-8', errors='ignore')
+            print("ADMIN_PASSWORD truncated to 72 bytes due to bcrypt limit")
 
         try:
             c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
@@ -124,8 +125,6 @@ def init_db():
             print("Admin user created/updated successfully")
         except sqlite3.IntegrityError:
             print("Admin user already exists - skipping creation")
-init_db()
-
 # ────────────────────────────────────────────────
 # Load contracts from Google Sheet
 # ────────────────────────────────────────────────
@@ -340,6 +339,7 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
