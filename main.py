@@ -332,10 +332,39 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
     """)
 
 # ... your other admin routes ...
-
+@app.get("/register", response_class=HTMLResponse)
+async def register_page():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Register - AISEC</title>
+        <style>
+            body {font-family:Arial; background:#f0f4f8; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0;}
+            .card {background:white; padding:2.5rem; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.15); width:420px;}
+            input, button {width:100%; padding:12px; margin:10px 0; border:1px solid #d1d5db; border-radius:6px;}
+            button {background:#10b981; color:white; border:none; font-weight:bold; cursor:pointer;}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h2>Create Account</h2>
+            <form method="post">
+                <input name="company_name" placeholder="Company Name" required>
+                <input name="cac_number" placeholder="CAC Number" required>
+                <input type="email" name="email" placeholder="Email" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit">Register</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
