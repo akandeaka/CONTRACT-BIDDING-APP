@@ -110,11 +110,12 @@ def init_db():
             hashed_password TEXT NOT NULL
         )''')
 
-        # Use short password via env var (avoids bcrypt 72-byte limit)
+        # Use environment variable with short fallback (avoids bcrypt limit)
         admin_password = os.getenv("ADMIN_PASSWORD", "AISEC2026!")
+        # Safety truncate (bcrypt max 72 bytes)
         if len(admin_password.encode('utf-8')) > 72:
             admin_password = admin_password[:72]
-            print("Warning: ADMIN_PASSWORD truncated to 72 bytes")
+            print("Warning: ADMIN_PASSWORD was truncated to 72 bytes due to bcrypt limit")
 
         try:
             c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
@@ -339,5 +340,6 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
