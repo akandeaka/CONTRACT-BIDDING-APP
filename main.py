@@ -191,64 +191,52 @@ except FileNotFoundError:
 # Real AI Prediction
 # ────────────────────────────────────────────────
 def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
-    """
-    Predict fair cost range using XGBoost.
-    All columns are explicitly converted to numeric before prediction.
-    """
     if contract_id >= len(df_bidding):
         return "Under Review", 0, 0
 
     row = df_bidding.iloc[contract_id]
 
-    # Extract and convert EVERY value to float/int right away
-    try:
-        input_dict = {
-            "estimated_length_km": float(row.get("estimated_length_km", 100)),
-            "latitude": float(row.get("latitude", 0)),
-            "longitude": float(row.get("longitude", 0)),
-            "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
-            "elevation_m": float(row.get("elevation_m", 300)),
-            # has_bridge → convert various string representations to 0/1
-            "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower().strip() in ["yes", "y", "1", "true"] else 0.0,
-            # is_dual_carriageway → same safe conversion
-            "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower().strip() in ["yes", "y", "1", "true"] else 0.0,
-            # terrain_type → map to number
-            "terrain_type": float({
-                "arid savanna": 0,
-                "semi-arid flat": 1,
-                "gently rolling savanna": 2,
-                "flat arid": 3,
-                "arid savanna dunes": 4,
-                "savanna plains/hills": 5,
-                "hilly savanna": 6,
-                "hilly rocky": 7,
-                "hilly forested": 8,
-                "tropical rainforest": 9,
-                "coastal sandy": 10,
-                "mangrove swamp": 11,
-                "riverine floodplain": 12,
-                "delta swamp": 13,
-                "hilly erosion-prone": 14,
-                "undulating rainforest": 15,
-                "rainforest valleys": 16,
-                "coastal mangrove": 17,
-                "rainforest hills": 18,
-            }.get(str(row.get("terrain_type", "semi-arid flat")).lower().strip(), 1)),
-        }
-    except (ValueError, TypeError) as e:
-        print(f"Error converting row {contract_id} to numeric: {e}")
-        return "Under Review", 0, 0
+    # Create numeric input
+    input_dict = {
+        "estimated_length_km": float(row.get("estimated_length_km", 100)),
+        "latitude": float(row.get("latitude", 0)),
+        "longitude": float(row.get("longitude", 0)),
+        "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
+        "elevation_m": float(row.get("elevation_m", 300)),
+        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ['yes', '1', 'true'] else 0.0,
+        "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ['yes', '1', 'true'] else 0.0,
+        "terrain_type": float({
+            "arid savanna": 0,
+            "semi-arid flat": 1,
+            "gently rolling savanna": 2,
+            "flat arid": 3,
+            "arid savanna dunes": 4,
+            "savanna plains/hills": 5,
+            "hilly savanna": 6,
+            "hilly rocky": 7,
+            "hilly forested": 8,
+            "tropical rainforest": 9,
+            "coastal sandy": 10,
+            "mangrove swamp": 11,
+            "riverine floodplain": 12,
+            "delta swamp": 13,
+            "hilly erosion-prone": 14,
+            "undulating rainforest": 15,
+            "rainforest valleys": 16,
+            "coastal mangrove": 17,
+            "rainforest hills": 18,
+        }.get(str(row.get("terrain_type", "semi-arid flat")).lower().strip(), 1)),
+    }
 
-    # Create DataFrame from dict (all values already numeric)
     input_df = pd.DataFrame([input_dict])
 
-    # Double safety: force numeric conversion on every column
-    input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
+    # Force all columns to numeric
+    input_df = input_df.astype(float)
 
     # Debug print (remove after successful deploy)
-    # print(f"Contract {contract_id} - dtypes:\n{input_df.dtypes}\nValues:\n{input_df.iloc[0].to_dict()}")
-print(f"Contract {contract_id} input dtypes:\n{input_df.dtypes}")
-print(f"Contract {contract_id} input values:\n{input_df.iloc[0].to_dict()}")
+    print(f"Contract {contract_id} input dtypes:\n{input_df.dtypes}")
+    print(f"Contract {contract_id} input values:\n{input_df.iloc[0].to_dict()}")
+
     # Predict
     predicted_value = model.predict(input_df)[0]
 
@@ -568,6 +556,7 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
