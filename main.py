@@ -363,6 +363,7 @@ async def register_page():
     """
     @app.post("/register", response_class=HTMLResponse)
 @app.post("/register", response_class=HTMLResponse)
+@app.post("/register", response_class=HTMLResponse)
 @limiter.limit("5/minute")  # ← no indent, directly under @app.post
 async def register(
     request: Request,
@@ -392,11 +393,3 @@ async def register(
         """)
     except sqlite3.IntegrityError:
         return HTMLResponse(register_page() + '<p style="color:red; text-align:center;">Email already registered</p>', status_code=409)
-
-
-
-
-
-
-
-
