@@ -361,9 +361,40 @@ async def register_page():
     </body>
     </html>
     """
+    @app.post("/register", response_class=HTMLResponse)
+@limiter.limit("5/minute")  # optional but good for preventing spam
+async def register(
+    request: Request,  # required for limiter
+    company_name: str = Form(...),
+    cac_number: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    email = email.strip().lower()
+    if len(password) < 8:
+        return HTMLResponse(register_page() + '<p style="color:red; text-align:center;">Password must be at least 8 characters</p>', status_code=400)
+
+    hashed = pwd_context.hash(password)
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO users (email, hashed_password, company_name, cac_number) VALUES (?, ?, ?, ?)",
+            (email, hashed, company_name.strip(), cac_number.strip())
+        )
+        db.commit()
+        return HTMLResponse("""
+        <h2 style="color:green; text-align:center; margin-top:120px;">
+            Registration successful!<br>
+            <a href="/login" style="color:#2563eb; font-weight:bold;">Login here</a>
+        </h2>
+        """)
+    except sqlite3.IntegrityError:
+        return HTMLResponse(register_page() + '<p style="color:red; text-align:center;">Email already registered</p>', status_code=409)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
 
