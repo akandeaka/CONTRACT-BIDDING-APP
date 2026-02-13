@@ -111,11 +111,18 @@ def init_db():
         )''')
 
         try:
-            c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
-                      ("admin", pwd_context.hash("AdminSecure2026!")))
-            conn.commit()
-        except sqlite3.IntegrityError:
-            pass
+    # Use a shorter password (max 20–30 chars recommended for bcrypt)
+    admin_password = os.getenv("ADMIN_PASSWORD", "AISEC2026!")
+    if len(admin_password.encode('utf-8')) > 72:
+        admin_password = admin_password[:72]  # hard truncate as fallback
+        print("Warning: ADMIN_PASSWORD truncated to 72 bytes")
+
+    c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
+              ("admin", pwd_context.hash(admin_password)))
+    conn.commit()
+    print("Admin user created/updated successfully")
+except sqlite3.IntegrityError:
+    print("Admin user already exists - skipping creation")
 
 init_db()
 
@@ -333,3 +340,4 @@ async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
