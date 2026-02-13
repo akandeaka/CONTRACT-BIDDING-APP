@@ -247,7 +247,8 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     # Debug print (remove after successful deploy)
     # print(f"Contract {contract_id} - dtypes:\n{input_df.dtypes}\nValues:\n{input_df.iloc[0].to_dict()}")
-
+print(f"Contract {contract_id} input dtypes:\n{input_df.dtypes}")
+print(f"Contract {contract_id} input values:\n{input_df.iloc[0].to_dict()}")
     # Predict
     predicted_value = model.predict(input_df)[0]
 
@@ -567,5 +568,6 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
 
