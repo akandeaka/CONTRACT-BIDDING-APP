@@ -99,7 +99,7 @@ def init_db():
             bid_amount REAL NOT NULL,
             equipment_list TEXT NOT NULL,
             workforce TEXT NOT NULL,
-            status TEXT NOT NOT NULL,
+            status TEXT NOT NULL,
             predicted_min REAL,
             predicted_max REAL,
             submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -110,8 +110,8 @@ def init_db():
             hashed_password TEXT NOT NULL
         )''')
 
-        # Use environment variable with short fallback (avoids bcrypt limit)
-        admin_password = os.getenv("ADMIN_PASSWORD", "AISEC2026!")
+        # Use environment variable with short fallback (avoids bcrypt 72-byte limit)
+        admin_password = os.getenv("ADMIN_PASSWORD", "AISEC26!")  # short & safe
         admin_password_bytes = admin_password.encode('utf-8')
         if len(admin_password_bytes) > 72:
             admin_password_bytes = admin_password_bytes[:72]
@@ -145,10 +145,7 @@ except Exception as e:
     df_bidding = pd.DataFrame()
 
 # ────────────────────────────────────────────────
-# Train / Load Real XGBoost Model for Fair Cost Prediction
-# ────────────────────────────────────────────────
-# ────────────────────────────────────────────────
-# Train / Load Real XGBoost Model
+# Train / Load XGBoost Model
 # ────────────────────────────────────────────────
 MODEL_FILE = "ai_contract_model.joblib"
 
@@ -163,7 +160,7 @@ def train_model():
 
     df = df_bidding.copy()
 
-    # Convert categorical safely
+    # Convert categorical to numeric safely
     for col in ["terrain_type", "geopolitical_zone"]:
         if col in df.columns:
             df[col] = df[col].astype("category").cat.codes
@@ -220,6 +217,7 @@ try:
     print("Loaded existing XGBoost model")
 except FileNotFoundError:
     model = train_model()
+
 # ────────────────────────────────────────────────
 # Real AI Prediction
 # ────────────────────────────────────────────────
@@ -418,10 +416,6 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
 async def bid_form(request: Request, contract_id: int):
     get_current_user_id(request)
     if contract_id < 0 or contract_id >= len(df_bidding):
-        if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))  # Render sets $PORT
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
         raise HTTPException(404, "Contract not found")
     project = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
 
@@ -534,9 +528,9 @@ async def admin_logout():
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
 if __name__ == "__main__":
     import uvicorn
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
-
