@@ -227,14 +227,30 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     row = df_bidding.iloc[contract_id]
 
+    # Helper to safely convert elevation (handles ranges like '250-350')
+    def safe_elevation(val):
+        if pd.isna(val) or val == '':
+            return 300.0
+        val_str = str(val).strip()
+        if '-' in val_str:
+            try:
+                low, high = map(float, val_str.split('-'))
+                return (low + high) / 2  # take midpoint of range
+            except:
+                return 300.0
+        try:
+            return float(val_str)
+        except:
+            return 300.0
+
     input_dict = {
         "estimated_length_km": float(row.get("estimated_length_km", 100)),
         "latitude": float(row.get("latitude", 0)),
         "longitude": float(row.get("longitude", 0)),
         "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
-        "elevation_m": float(row.get("elevation_m", 300)),
-        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ['yes', '1', 'true'] else 0.0,
-        "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ['yes', '1', 'true'] else 0.0,
+        "elevation_m": safe_elevation(row.get("elevation_m")),
+        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ['yes', 'y', '1', 'true'] else 0.0,
+        "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ['yes', 'y', '1', 'true'] else 0.0,
         "terrain_type": float({
             "arid savanna": 0,
             "semi-arid flat": 1,
@@ -260,8 +276,8 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     input_df = pd.DataFrame([input_dict])
 
-    # Force all to float64
-    input_df = input_df.astype(float)
+    # Force numeric (extra safety)
+    input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
 
     predicted_value = model.predict(input_df)[0]
 
@@ -271,7 +287,6 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
     status = "Fair" if min_fair <= bid_amount <= max_fair else "Under Review"
 
     return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
-
 # ────────────────────────────────────────────────
 # Routes
 # ────────────────────────────────────────────────
@@ -534,3 +549,4 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
