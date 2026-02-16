@@ -111,7 +111,7 @@ def init_db():
         )''')
 
         # Use environment variable with short fallback (avoids bcrypt 72-byte limit)
-        admin_password = os.getenv("ADMIN_PASSWORD", "AISEC26!")  # short & safe
+        admin_password = os.getenv("ADMIN_PASSWORD", "AISECAdmin2026!")  
         admin_password_bytes = admin_password.encode('utf-8')
         if len(admin_password_bytes) > 72:
             admin_password_bytes = admin_password_bytes[:72]
@@ -553,6 +553,7 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
 
 
 
