@@ -110,13 +110,13 @@ def init_db():
             hashed_password TEXT NOT NULL
         )''')
 
-        # Force short password
-        admin_password = os.getenv("ADMIN_PASSWORD", "AISEC2026!")
+        # Use short password (bcrypt limit = 72 bytes)
+        admin_password = os.getenv("ADMIN_PASSWORD", "AISEC26!")  # ← changed to short
         admin_password_bytes = admin_password.encode('utf-8')
         if len(admin_password_bytes) > 72:
             admin_password_bytes = admin_password_bytes[:72]
             admin_password = admin_password_bytes.decode('utf-8', errors='ignore')
-            print("ADMIN_PASSWORD truncated to 72 bytes due to bcrypt limit")
+            print("Warning: ADMIN_PASSWORD truncated to 72 bytes")
 
         try:
             c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
@@ -392,4 +392,5 @@ async def register(
         """)
     except sqlite3.IntegrityError:
         return HTMLResponse(register_page() + '<p style="color:red; text-align:center;">Email already registered</p>', status_code=409)
+
 
