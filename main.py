@@ -534,9 +534,7 @@ async def admin_logout():
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-
+    port = int(os.getenv("PORT", 8000))  # Render uses $PORT
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
