@@ -77,7 +77,10 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
         yield conn
     finally:
         conn.close()
-
+@app.on_event("startup")
+def startup_event():
+    init_db()
+    print("Database tables initialized on startup")
 def init_db():
     with sqlite3.connect("bids.db") as conn:
         c = conn.cursor()
@@ -386,12 +389,12 @@ async def register(
         return HTMLResponse("""
         <h2 style="color:green; text-align:center; margin-top:120px;">
             Registration successful!<br>
-            <a href="/login">Login here</a>
+            <a href="/login" style="color:#2563eb; font-weight:bold;">Login here</a>
         </h2>
         """)
     except sqlite3.OperationalError as e:
-        print(f"DB error during registration: {e}")
+        print(f"DB OperationalError during registration: {e}")
         return HTMLResponse(register_page() + f'<p style="color:red">Database error: {str(e)}</p>', status_code=500)
     except Exception as e:
         print(f"Unexpected error during registration: {e}")
-        return HTMLResponse(register_page() + '<p style="color:red">Server error. Please try again.</p>', status_code=500)
+        return HTMLResponse(register_page() + '<p style="color:red">Server error. Please try again later.</p>', status_code=500)
