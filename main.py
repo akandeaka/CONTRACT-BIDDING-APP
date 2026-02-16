@@ -362,7 +362,7 @@ async def register_page():
     """
     
 @app.post("/register", response_class=HTMLResponse)
-@limiter.limit("5/minute")  # ← no indent, directly under @app.post
+@limiter.limit("5/minute")
 async def register(
     request: Request,
     company_name: str = Form(...),
@@ -371,13 +371,13 @@ async def register(
     password: str = Form(...),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    email = email.strip().lower()
-    if len(password) < 8:
-        return HTMLResponse(register_page() + '<p style="color:red; text-align:center;">Password must be at least 8 characters</p>', status_code=400)
-
-    hashed = pwd_context.hash(password)
-    cursor = db.cursor()
     try:
+        email = email.strip().lower()
+        if len(password) < 8:
+            return HTMLResponse(register_page() + '<p style="color:red">Password must be at least 8 characters</p>', status_code=400)
+
+        hashed = pwd_context.hash(password)
+        cursor = db.cursor()
         cursor.execute(
             "INSERT INTO users (email, hashed_password, company_name, cac_number) VALUES (?, ?, ?, ?)",
             (email, hashed, company_name.strip(), cac_number.strip())
@@ -386,11 +386,12 @@ async def register(
         return HTMLResponse("""
         <h2 style="color:green; text-align:center; margin-top:120px;">
             Registration successful!<br>
-            <a href="/login" style="color:#2563eb; font-weight:bold;">Login here</a>
+            <a href="/login">Login here</a>
         </h2>
         """)
-    except sqlite3.IntegrityError:
-        return HTMLResponse(register_page() + '<p style="color:red; text-align:center;">Email already registered</p>', status_code=409)
-
-
-
+    except sqlite3.OperationalError as e:
+        print(f"DB error during registration: {e}")
+        return HTMLResponse(register_page() + f'<p style="color:red">Database error: {str(e)}</p>', status_code=500)
+    except Exception as e:
+        print(f"Unexpected error during registration: {e}")
+        return HTMLResponse(register_page() + '<p style="color:red">Server error. Please try again.</p>', status_code=500)
