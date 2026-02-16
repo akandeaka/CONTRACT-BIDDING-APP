@@ -278,9 +278,7 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     # Force numeric (extra safety)
     input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
-print(f"Bid for contract {contract_id} - elevation raw value: {row.get('elevation_m')}")
-print(f"Processed elevation: {input_dict['elevation_m']}")
-print(f"Input DataFrame:\n{input_df}")
+
     predicted_value = model.predict(input_df)[0]
 
     min_fair = predicted_value * 0.88
@@ -551,5 +549,6 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
 
 
