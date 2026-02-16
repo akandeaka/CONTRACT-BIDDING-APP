@@ -8,3 +8,4 @@ xgboost==2.0.3
 scikit-learn
 joblib
 python-multipart
+bcrypt==4.1.3
