@@ -227,7 +227,7 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     row = df_bidding.iloc[contract_id]
 
-    # Helper to safely convert elevation (handles ranges like '250-350')
+    # Safe elevation parser: handles ranges like "250-350" → average
     def safe_elevation(val):
         if pd.isna(val) or val == '':
             return 300.0
@@ -235,7 +235,7 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
         if '-' in val_str:
             try:
                 low, high = map(float, val_str.split('-'))
-                return (low + high) / 2  # take midpoint of range
+                return (low + high) / 2.0
             except:
                 return 300.0
         try:
@@ -278,7 +278,9 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     # Force numeric (extra safety)
     input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
-
+print(f"Bid for contract {contract_id} - elevation raw value: {row.get('elevation_m')}")
+print(f"Processed elevation: {input_dict['elevation_m']}")
+print(f"Input DataFrame:\n{input_df}")
     predicted_value = model.predict(input_df)[0]
 
     min_fair = predicted_value * 0.88
@@ -549,4 +551,5 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
 
