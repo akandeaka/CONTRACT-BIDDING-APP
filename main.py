@@ -418,6 +418,10 @@ async def list_contracts(request: Request, db: sqlite3.Connection = Depends(get_
 async def bid_form(request: Request, contract_id: int):
     get_current_user_id(request)
     if contract_id < 0 or contract_id >= len(df_bidding):
+        if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))  # Render sets $PORT
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
         raise HTTPException(404, "Contract not found")
     project = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
 
@@ -534,4 +538,5 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 
