@@ -227,28 +227,28 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     row = df_bidding.iloc[contract_id]
 
-    # Safe elevation parser: handles ranges like "250-350" → average
-    def safe_elevation(val):
+    # Helper: safely convert to float, handle ranges and bad data
+    def safe_float(val, default=0.0):
         if pd.isna(val) or val == '':
-            return 300.0
+            return default
         val_str = str(val).strip()
         if '-' in val_str:
             try:
                 low, high = map(float, val_str.split('-'))
-                return (low + high) / 2.0
+                return (low + high) / 2.0  # midpoint of range
             except:
-                return 300.0
+                return default
         try:
             return float(val_str)
         except:
-            return 300.0
+            return default
 
     input_dict = {
-        "estimated_length_km": float(row.get("estimated_length_km", 100)),
-        "latitude": float(row.get("latitude", 0)),
-        "longitude": float(row.get("longitude", 0)),
-        "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
-        "elevation_m": safe_elevation(row.get("elevation_m")),
+        "estimated_length_km": safe_float(row.get("estimated_length_km"), 100.0),
+        "latitude": safe_float(row.get("latitude"), 0.0),
+        "longitude": safe_float(row.get("longitude"), 0.0),
+        "rainfall_mm_per_year": safe_float(row.get("rainfall_mm_per_year"), 800.0),
+        "elevation_m": safe_float(row.get("elevation_m"), 300.0),
         "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ['yes', 'y', '1', 'true'] else 0.0,
         "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ['yes', 'y', '1', 'true'] else 0.0,
         "terrain_type": float({
@@ -276,10 +276,14 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     input_df = pd.DataFrame([input_dict])
 
-    # Force numeric (extra safety)
+    # Extra safety: force numeric
     input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
 
-    predicted_value = model.predict(input_df)[0]
+    try:
+        predicted_value = model.predict(input_df)[0]
+    except Exception as e:
+        print(f"Prediction failed for contract {contract_id}: {e}")
+        return "Under Review", 0, 0
 
     min_fair = predicted_value * 0.88
     max_fair = predicted_value * 1.12
@@ -549,6 +553,7 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
 
 
 
