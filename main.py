@@ -147,33 +147,64 @@ except Exception as e:
 # ────────────────────────────────────────────────
 # Train / Load Real XGBoost Model for Fair Cost Prediction
 # ────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# Train / Load Real XGBoost Model
+# ────────────────────────────────────────────────
 MODEL_FILE = "ai_contract_model.joblib"
 
 def train_model():
     global model
     print("Training XGBoost model...")
 
+    if df_bidding.empty:
+        print("ERROR: No data loaded from Google Sheet. Cannot train model.")
+        model = xgb.XGBRegressor()  # dummy fallback
+        return model
+
     df = df_bidding.copy()
 
-    # Handle categorical columns
+    # Convert categorical safely
     for col in ["terrain_type", "geopolitical_zone"]:
         if col in df.columns:
             df[col] = df[col].astype("category").cat.codes
 
-    features = ["estimated_length_km", "terrain_type", "latitude", "longitude",
-                "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"]
+    # Use only existing features
+    possible_features = [
+        "estimated_length_km", "terrain_type", "latitude", "longitude",
+        "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"
+    ]
+    features = [f for f in possible_features if f in df.columns]
 
-    if "boq_total_cost" not in df.columns:
-        print("No real cost column → using proxy target")
-        df["boq_total_cost"] = df["estimated_length_km"] * 1_200_000_000
+    if not features:
+        print("ERROR: No valid features found in sheet. Using dummy model.")
+        model = xgb.XGBRegressor()
+        return model
 
-    X = df[features].fillna(0)
-    y = df["boq_total_cost"]
+    # Proxy target if no real cost column
+    target_col = "boq_total_cost"
+    if target_col not in df.columns:
+        print("No real cost column → using proxy target (length * 1.2B)")
+        df[target_col] = df["estimated_length_km"] * 1_200_000_000
+
+    X = df[features].apply(pd.to_numeric, errors='coerce').fillna(0)
+    y = df[target_col]
+
+    if len(X) < 10:
+        print("WARNING: Too few rows for training. Using dummy model.")
+        model = xgb.XGBRegressor()
+        return model
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    model = xgb.XGBRegressor(n_estimators=500, learning_rate=0.05, max_depth=6,
-                             subsample=0.8, colsample_bytree=0.8, random_state=42)
+    model = xgb.XGBRegressor(
+        n_estimators=500,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42
+    )
+
     model.fit(X_train, y_train)
 
     preds = model.predict(X_test)
@@ -189,7 +220,6 @@ try:
     print("Loaded existing XGBoost model")
 except FileNotFoundError:
     model = train_model()
-
 # ────────────────────────────────────────────────
 # Real AI Prediction
 # ────────────────────────────────────────────────
@@ -504,3 +534,4 @@ async def admin_logout():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
