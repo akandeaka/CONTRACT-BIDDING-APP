@@ -78,54 +78,31 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
     finally:
         conn.close()
 
+
 def init_db():
     with sqlite3.connect("bids.db") as conn:
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL,
-            company_name TEXT NOT NULL,
-            cac_number TEXT NOT NULL
-        )''')
-        c.execute('''CREATE TABLE IF NOT EXISTS bids (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            contract_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            company_name TEXT NOT NULL,
-            cac_number TEXT NOT NULL,
-            email TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            bid_amount REAL NOT NULL,
-            equipment_list TEXT NOT NULL,
-            workforce TEXT NOT NULL,
-            status TEXT NOT NULL,
-            predicted_min REAL,
-            predicted_max REAL,
-            submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )''')
-        c.execute('''CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL
-        )''')
+        # ... keep all your CREATE TABLE statements ...
 
-        # Use environment variable with short fallback (avoids bcrypt 72-byte limit)
-        admin_password = os.getenv("ADMIN_PASSWORD", "AISECAdmin2026!")  
+        # PERMANENT SOLUTION: always reset admin user on startup/deploy
+        c.execute("DELETE FROM admins WHERE username = 'admin'")
+        conn.commit()
+
+        # Use a known, short, permanent password
+        admin_password = os.getenv("ADMIN_PASSWORD", "AISECAdmin2026!")  # ← you will always use this
         admin_password_bytes = admin_password.encode('utf-8')
         if len(admin_password_bytes) > 72:
             admin_password_bytes = admin_password_bytes[:72]
             admin_password = admin_password_bytes.decode('utf-8', errors='ignore')
-            print("Warning: ADMIN_PASSWORD truncated to 72 bytes")
+            print("Warning: ADMIN_PASSWORD truncated")
 
         try:
             c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
                       ("admin", pwd_context.hash(admin_password)))
             conn.commit()
-            print("Admin user created/updated successfully")
+            print("Admin user RESET and recreated with permanent password")
         except sqlite3.IntegrityError:
-            print("Admin user already exists - skipping creation")
-
+            print("Admin insert failed (should not happen)")
 @app.on_event("startup")
 def startup_event():
     init_db()
@@ -616,6 +593,7 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
 
 
 
