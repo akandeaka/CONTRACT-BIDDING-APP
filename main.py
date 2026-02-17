@@ -157,43 +157,25 @@ def train_model():
     global model
     print("Training XGBoost model...")
 
-    if df_bidding.empty:
-        print("ERROR: No data loaded from Google Sheet. Cannot train model.")
-        model = xgb.XGBRegressor()  # dummy fallback
-        return model
-
     df = df_bidding.copy()
 
-    # Convert categorical to numeric safely
+    # Handle categorical features
     for col in ["terrain_type", "geopolitical_zone"]:
         if col in df.columns:
             df[col] = df[col].astype("category").cat.codes
 
-    # Use only existing features
-    possible_features = [
+    features = [
         "estimated_length_km", "terrain_type", "latitude", "longitude",
         "rainfall_mm_per_year", "elevation_m", "has_bridge", "is_dual_carriageway"
     ]
-    features = [f for f in possible_features if f in df.columns]
 
-    if not features:
-        print("ERROR: No valid features found in sheet. Using dummy model.")
-        model = xgb.XGBRegressor()
-        return model
+    # Target: use proxy if no real cost
+    if "boq_total_cost" not in df.columns:
+        print("No 'boq_total_cost' column → creating proxy target")
+        df["boq_total_cost"] = df["estimated_length_km"] * 1_200_000_000
 
-    # Proxy target if no real cost column
-    target_col = "boq_total_cost"
-    if target_col not in df.columns:
-        print("No real cost column → using proxy target (length * 1.2B)")
-        df[target_col] = df["estimated_length_km"] * 1_200_000_000
-
-    X = df[features].apply(pd.to_numeric, errors='coerce').fillna(0)
-    y = df[target_col]
-
-    if len(X) < 10:
-        print("WARNING: Too few rows for training. Using dummy model.")
-        model = xgb.XGBRegressor()
-        return model
+    X = df[features].fillna(0)
+    y = df["boq_total_cost"]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -208,82 +190,45 @@ def train_model():
 
     model.fit(X_train, y_train)
 
-    preds = model.predict(X_test)
-    mape = mean_absolute_percentage_error(y_test, preds) * 100
-    print(f"Model trained → MAPE: {mape:.2f}%")
+    predictions = model.predict(X_test)
+    mape = mean_absolute_percentage_error(y_test, predictions) * 100
+    print(f"Model Accuracy: MAPE = {mape:.2f}%")
 
     joblib.dump(model, MODEL_FILE)
-    return model
 
-# Load or train model
+# Load or train model on startup
 try:
     model = joblib.load(MODEL_FILE)
-    print("Loaded existing XGBoost model")
-except FileNotFoundError:
-    model = train_model()
+    print("AI Model loaded successfully")
+except:
+    print("Training new model...")
+    train_model()
 
 # ────────────────────────────────────────────────
-# Real AI Prediction
+# Use the real model for fair bid prediction
 # ────────────────────────────────────────────────
 def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
     if contract_id >= len(df_bidding):
         return "Under Review", 0, 0
 
-    row = df_bidding.iloc[contract_id]
+    row = df_bidding.iloc[contract_id].copy()
 
-    # Safe elevation parser: handles ranges like "250-350" → average
-    def safe_elevation(val):
-        if pd.isna(val) or val == '':
-            return 300.0
-        val_str = str(val).strip()
-        if '-' in val_str:
-            try:
-                low, high = map(float, val_str.split('-'))
-                return (low + high) / 2.0
-            except:
-                return 300.0
-        try:
-            return float(val_str)
-        except:
-            return 300.0
+    # Prepare input for model
+    input_data = pd.DataFrame([{
+        "estimated_length_km": row.get("estimated_length_km", 100),
+        "terrain_type": str(row.get("terrain_type", "Semi-arid flat")),
+        "latitude": row.get("latitude", 0),
+        "longitude": row.get("longitude", 0),
+        "rainfall_mm_per_year": row.get("rainfall_mm_per_year", 800),
+        "elevation_m": row.get("elevation_m", 300),
+        "has_bridge": int(row.get("has_bridge", 0)),
+        "is_dual_carriageway": int(row.get("is_dual_carriageway", 0)),
+    }])
 
-    input_dict = {
-        "estimated_length_km": float(row.get("estimated_length_km", 100)),
-        "latitude": float(row.get("latitude", 0)),
-        "longitude": float(row.get("longitude", 0)),
-        "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
-        "elevation_m": safe_elevation(row.get("elevation_m")),
-        "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ['yes', 'y', '1', 'true'] else 0.0,
-        "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ['yes', 'y', '1', 'true'] else 0.0,
-        "terrain_type": float({
-            "arid savanna": 0,
-            "semi-arid flat": 1,
-            "gently rolling savanna": 2,
-            "flat arid": 3,
-            "arid savanna dunes": 4,
-            "savanna plains/hills": 5,
-            "hilly savanna": 6,
-            "hilly rocky": 7,
-            "hilly forested": 8,
-            "tropical rainforest": 9,
-            "coastal sandy": 10,
-            "mangrove swamp": 11,
-            "riverine floodplain": 12,
-            "delta swamp": 13,
-            "hilly erosion-prone": 14,
-            "undulating rainforest": 15,
-            "rainforest valleys": 16,
-            "coastal mangrove": 17,
-            "rainforest hills": 18,
-        }.get(str(row.get("terrain_type", "semi-arid flat")).lower().strip(), 1)),
-    }
+    # Convert categorical to codes
+    input_data["terrain_type"] = input_data["terrain_type"].astype("category").cat.codes
 
-    input_df = pd.DataFrame([input_dict])
-
-    # Force numeric (extra safety)
-    input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
-
-    predicted_value = model.predict(input_df)[0]
+    predicted_value = model.predict(input_data)[0]
 
     min_fair = predicted_value * 0.88
     max_fair = predicted_value * 1.12
@@ -325,17 +270,15 @@ async def register(
     password: str = Form(...),
     db: sqlite3.Connection = Depends(get_db)
 ):
-    try:
-        email = email.strip().lower()
-        if len(password) < 8:
-            return HTMLResponse(register_page() + '<p style="color:red">Password must be at least 8 characters</p>', status_code=400)
+    email = email.strip().lower()
+    if len(password) < 8:
+        return HTMLResponse(register_page() + '<p style="color:red">Password must be at least 8 characters</p>', status_code=400)
 
-        hashed = pwd_context.hash(password)
-        cursor = db.cursor()
-        cursor.execute(
-            "INSERT INTO users (email, hashed_password, company_name, cac_number) VALUES (?, ?, ?, ?)",
-            (email, hashed, company_name.strip(), cac_number.strip())
-        )
+    hashed = pwd_context.hash(password)
+    cursor = db.cursor()
+    try:
+        cursor.execute("INSERT INTO users (email, hashed_password, company_name, cac_number) VALUES (?, ?, ?, ?)",
+                       (email, hashed, company_name.strip(), cac_number.strip()))
         db.commit()
         return HTMLResponse("""
         <h2 style="color:green; text-align:center; margin-top:120px;">
@@ -343,12 +286,8 @@ async def register(
             <a href="/login">Login here</a>
         </h2>
         """)
-    except sqlite3.OperationalError as e:
-        print(f"DB OperationalError during registration: {e}")
-        return HTMLResponse(register_page() + f'<p style="color:red">Database error: {str(e)}</p>', status_code=500)
-    except Exception as e:
-        print(f"Unexpected error during registration: {e}")
-        return HTMLResponse(register_page() + '<p style="color:red">Server error. Please try again later.</p>', status_code=500)
+    except sqlite3.IntegrityError:
+        return HTMLResponse(register_page() + '<p style="color:red">Email already registered</p>', status_code=409)
 
 # ── Login ────────────────────────────────────────
 @app.get("/login", response_class=HTMLResponse)
@@ -554,3 +493,4 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+```
