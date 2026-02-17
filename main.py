@@ -49,8 +49,12 @@ df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
 # Database setup (CORRECTED SCHEMA - NO FOREIGN KEY CONSTRAINT)
-conn = sqlite3.connect("bids.db", check_same_thread=False)
-cursor = conn.cursor()
+with sqlite3.connect("bids.db", check_same_thread=False) as conn:
+    cursor = conn.cursor()
+    # your code here
+    cursor.execute("...")
+    conn.commit()  # if needed
+# connection auto-closes when block ends
 
 cursor.execute("""
     INSERT INTO bids (
@@ -706,6 +710,7 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
 
 
 
