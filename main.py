@@ -168,7 +168,8 @@ AISEC Team"""
         return False
 
 
-def create_user_session(user_id)
+def create_user_session(user_id: int) 
+    
 
     token = secrets.token_urlsafe(32)
     sessions[token] = user_id
@@ -706,3 +707,4 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
