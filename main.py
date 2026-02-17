@@ -460,17 +460,14 @@ def admin_dashboard(request: Request):
         admin_id = get_admin_user(request)
         
         # CORRECT QUERY: NO JOIN, EXPLICIT COLUMNS
-        conn = sqlite3.connect("bids.db", check_same_thread=False)
-try:
+        with sqlite3.connect("bids.db", check_same_thread=False) as conn:
     cursor = conn.cursor()
-    # your operations
-    conn.commit()
-except sqlite3.Error as e:
-    print(f"Database error: {e}")
-    # optionally rollback: conn.rollback()
-    raise  # re-raise so FastAPI returns 500
-finally:
-    conn.close()
+    # all your database operations here, e.g.
+    cursor.execute("SELECT * FROM admins WHERE username = ?", ("admin",))
+    result = cursor.fetchone()
+    # if you do INSERT/UPDATE/DELETE:
+    # conn.commit()
+# connection auto-closes when 'with' block ends — no leak
 
 cursor.execute("""
     SELECT id, contract_id, company_name, cac_number, email, phone,
@@ -719,6 +716,7 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
 
 
 
