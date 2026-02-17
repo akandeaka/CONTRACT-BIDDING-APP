@@ -530,7 +530,70 @@ async def admin_login(username: str = Form(...), password: str = Form(...),
     resp.set_cookie(key="admin_token", value=token, httponly=True, secure=True, samesite="lax",
                     max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
     return resp
+@app.get("/admin/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
+    get_current_admin_id(request)  # enforces admin login
 
+    cursor = db.cursor()
+    cursor.execute("""
+        SELECT id, contract_id, company_name, bid_amount, status, submitted_at,
+               predicted_min, predicted_max
+        FROM bids
+        ORDER BY submitted_at DESC
+    """)
+    bids = cursor.fetchall()
+
+    rows = ""
+    for b in bids:
+        contract_id = b["contract_id"]
+        project_name = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
+        min_fair = b["predicted_min"] if b["predicted_min"] is not None else "N/A"
+        max_fair = b["predicted_max"] if b["predicted_max"] is not None else "N/A"
+        status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#f59e0b"
+
+        rows += f"""
+        <tr>
+            <td>#{b['id']}</td>
+            <td>{project_name}</td>
+            <td>{b['company_name']}</td>
+            <td>₦{b['bid_amount']:,.2f}B</td>
+            <td>₦{min_fair}B – ₦{max_fair}B</td>
+            <td style="color:{status_color};">{b['status']}</td>
+            <td>{b['submitted_at'][:10]}</td>
+            <td>
+                <button onclick="openReviewModal({b['id']}, '{project_name.replace("'", "\\'")}', {b['bid_amount']}, {min_fair}, {max_fair})"
+                        style="background:#3b82f6;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">
+                    Review Bid
+                </button>
+            </td>
+        </tr>
+        """
+
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>AISEC Admin Dashboard</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 20px; }}
+            h1 {{ color: #1e40af; text-align: center; }}
+            table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
+            th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
+            th {{ background: #1e40af; color: white; }}
+            button {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; color: white; }}
+        </style>
+    </head>
+    <body>
+        <h1>Admin Dashboard – All Bids</h1>
+        <a href="/admin/logout" style="float:right;color:#ef4444;">Logout</a>
+        <table>
+            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>AI Fair Range</th><th>Status</th><th>Date</th><th>Action</th></tr>
+            {rows}
+        </table>
+    </body>
+    </html>
+    """)
 @app.post("/admin/update-bid/{bid_id}")
 async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
                             db: sqlite3.Connection = Depends(get_db)):
@@ -553,6 +616,7 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
 
 
 
