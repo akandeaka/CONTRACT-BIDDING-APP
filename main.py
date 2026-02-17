@@ -78,23 +78,49 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
     finally:
         conn.close()
 
-
 def init_db():
     with sqlite3.connect("bids.db") as conn:
         c = conn.cursor()
-        # ... keep all your CREATE TABLE statements ...
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            hashed_password TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            cac_number TEXT NOT NULL
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS bids (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contract_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            company_name TEXT NOT NULL,
+            cac_number TEXT NOT NULL,
+            email TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            bid_amount REAL NOT NULL,
+            equipment_list TEXT NOT NULL,
+            workforce TEXT NOT NULL,
+            status TEXT NOT NULL,
+            predicted_min REAL,
+            predicted_max REAL,
+            submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            hashed_password TEXT NOT NULL
+        )''')
 
-        # PERMANENT SOLUTION: always reset admin user on startup/deploy
+        # PERMANENT: always reset admin user on startup
         c.execute("DELETE FROM admins WHERE username = 'admin'")
         conn.commit()
 
-        # Use a known, short, permanent password
-        admin_password = os.getenv("ADMIN_PASSWORD", "AISECAdmin2026!")  # ← you will always use this
+        # Use known permanent password
+        admin_password = os.getenv("ADMIN_PASSWORD", "AISECAdmin2026!")
         admin_password_bytes = admin_password.encode('utf-8')
         if len(admin_password_bytes) > 72:
             admin_password_bytes = admin_password_bytes[:72]
             admin_password = admin_password_bytes.decode('utf-8', errors='ignore')
-            print("Warning: ADMIN_PASSWORD truncated")
+            print("Warning: ADMIN_PASSWORD truncated to 72 bytes")
 
         try:
             c.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
@@ -102,7 +128,8 @@ def init_db():
             conn.commit()
             print("Admin user RESET and recreated with permanent password")
         except sqlite3.IntegrityError:
-            print("Admin insert failed (should not happen)")
+            print("Admin insert failed - should not happen")
+
 @app.on_event("startup")
 def startup_event():
     init_db()
@@ -204,28 +231,28 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     row = df_bidding.iloc[contract_id]
 
-    # Helper: safely convert to float, handle ranges and bad data
-    def safe_float(val, default=0.0):
+    # Safe elevation parser: handles ranges like "250-350" → average
+    def safe_elevation(val):
         if pd.isna(val) or val == '':
-            return default
+            return 300.0
         val_str = str(val).strip()
         if '-' in val_str:
             try:
                 low, high = map(float, val_str.split('-'))
-                return (low + high) / 2.0  # midpoint of range
+                return (low + high) / 2.0
             except:
-                return default
+                return 300.0
         try:
             return float(val_str)
         except:
-            return default
+            return 300.0
 
     input_dict = {
-        "estimated_length_km": safe_float(row.get("estimated_length_km"), 100.0),
-        "latitude": safe_float(row.get("latitude"), 0.0),
-        "longitude": safe_float(row.get("longitude"), 0.0),
-        "rainfall_mm_per_year": safe_float(row.get("rainfall_mm_per_year"), 800.0),
-        "elevation_m": safe_float(row.get("elevation_m"), 300.0),
+        "estimated_length_km": float(row.get("estimated_length_km", 100)),
+        "latitude": float(row.get("latitude", 0)),
+        "longitude": float(row.get("longitude", 0)),
+        "rainfall_mm_per_year": float(row.get("rainfall_mm_per_year", 800)),
+        "elevation_m": safe_elevation(row.get("elevation_m")),
         "has_bridge": 1.0 if str(row.get("has_bridge", "No")).lower() in ['yes', 'y', '1', 'true'] else 0.0,
         "is_dual_carriageway": 1.0 if str(row.get("is_dual_carriageway", "No")).lower() in ['yes', 'y', '1', 'true'] else 0.0,
         "terrain_type": float({
@@ -253,14 +280,10 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
 
     input_df = pd.DataFrame([input_dict])
 
-    # Extra safety: force numeric
+    # Force numeric (extra safety)
     input_df = input_df.apply(pd.to_numeric, errors='coerce').fillna(0)
 
-    try:
-        predicted_value = model.predict(input_df)[0]
-    except Exception as e:
-        print(f"Prediction failed for contract {contract_id}: {e}")
-        return "Under Review", 0, 0
+    predicted_value = model.predict(input_df)[0]
 
     min_fair = predicted_value * 0.88
     max_fair = predicted_value * 1.12
@@ -268,6 +291,7 @@ def is_fair_bid(contract_id: int, bid_amount: float) -> tuple:
     status = "Fair" if min_fair <= bid_amount <= max_fair else "Under Review"
 
     return status, round(min_fair / 1e9, 2), round(max_fair / 1e9, 2)
+
 # ────────────────────────────────────────────────
 # Routes
 # ────────────────────────────────────────────────
@@ -507,70 +531,7 @@ async def admin_login(username: str = Form(...), password: str = Form(...),
     resp.set_cookie(key="admin_token", value=token, httponly=True, secure=True, samesite="lax",
                     max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600)
     return resp
-@app.get("/admin/dashboard", response_class=HTMLResponse)
-async def admin_dashboard(request: Request, db: sqlite3.Connection = Depends(get_db)):
-    get_current_admin_id(request)  # enforces admin login
 
-    cursor = db.cursor()
-    cursor.execute("""
-        SELECT id, contract_id, company_name, bid_amount, status, submitted_at,
-               predicted_min, predicted_max
-        FROM bids
-        ORDER BY submitted_at DESC
-    """)
-    bids = cursor.fetchall()
-
-    rows = ""
-    for b in bids:
-        contract_id = b["contract_id"]
-        project_name = df_bidding.iloc[contract_id].get("Project_name", f"Contract {contract_id}")
-        min_fair = b["predicted_min"] if b["predicted_min"] is not None else "N/A"
-        max_fair = b["predicted_max"] if b["predicted_max"] is not None else "N/A"
-        status_color = "#10b981" if b["status"] == "Approved" else "#ef4444" if b["status"] == "Rejected" else "#f59e0b"
-
-        rows += f"""
-        <tr>
-            <td>#{b['id']}</td>
-            <td>{project_name}</td>
-            <td>{b['company_name']}</td>
-            <td>₦{b['bid_amount']:,.2f}B</td>
-            <td>₦{min_fair}B – ₦{max_fair}B</td>
-            <td style="color:{status_color};">{b['status']}</td>
-            <td>{b['submitted_at'][:10]}</td>
-            <td>
-                <button onclick="openReviewModal({b['id']}, '{project_name.replace("'", "\\'")}', {b['bid_amount']}, {min_fair}, {max_fair})"
-                        style="background:#3b82f6;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">
-                    Review Bid
-                </button>
-            </td>
-        </tr>
-        """
-
-    return HTMLResponse(f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>AISEC Admin Dashboard</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; background: #f8fafc; margin: 0; padding: 20px; }}
-            h1 {{ color: #1e40af; text-align: center; }}
-            table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
-            th, td {{ padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
-            th {{ background: #1e40af; color: white; }}
-            button {{ padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; color: white; }}
-        </style>
-    </head>
-    <body>
-        <h1>Admin Dashboard – All Bids</h1>
-        <a href="/admin/logout" style="float:right;color:#ef4444;">Logout</a>
-        <table>
-            <tr><th>ID</th><th>Project</th><th>Company</th><th>Bid Amount</th><th>AI Fair Range</th><th>Status</th><th>Date</th><th>Action</th></tr>
-            {rows}
-        </table>
-    </body>
-    </html>
-    """)
 @app.post("/admin/update-bid/{bid_id}")
 async def update_bid_status(request: Request, bid_id: int, new_status: str = Form(...),
                             db: sqlite3.Connection = Depends(get_db)):
@@ -593,10 +554,3 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))  # Render sets PORT env var
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
-
-
-
-
-
-
-
