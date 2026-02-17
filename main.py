@@ -180,7 +180,7 @@ def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail="Not authenticated")
     return sessions[token]
 
-def create_admin_session(admin_id)
+def create_admin_session(admin_id):     
     token = request.cookies.get("admin_token")
     if not token or token not in sessions:
         raise HTTPException(status_code=401, detail="Admin not authenticated")
@@ -706,5 +706,6 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
 
 
