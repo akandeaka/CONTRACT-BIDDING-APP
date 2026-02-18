@@ -425,7 +425,18 @@ def admin_login_page():
     </body>
     </html>
     """)
-
+@app.get("/debug/admin-check")
+def debug_admin_check():
+    with get_db() as conn:
+        row = conn.execute("SELECT username, hashed_password FROM admins WHERE username = 'admin'").fetchone()
+        if row:
+            return {
+                "exists": True,
+                "username_in_db": row["username"],
+                "hashed_password_in_db": row["hashed_password"][:20] + "...",  # partial for safety
+            }
+        else:
+            return {"exists": False}
 @app.post("/admin/login", response_class=HTMLResponse)
 async def admin_login(response: Response, username: str = Form(...), password: str = Form(...)):
     hashed = hashlib.sha256(password.encode()).hexdigest()
@@ -593,3 +604,4 @@ async def admin_logout(response: Response):
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
