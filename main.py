@@ -560,7 +560,7 @@ def admin_dashboard(request: Request):
                 status=b['status'], timestamp=b['timestamp']
             )
 
-                return HTMLResponse(f"""
+        return HTMLResponse(f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -623,4 +623,5 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
 
