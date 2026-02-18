@@ -289,8 +289,6 @@ def contracts(request: Request):
                 (user_id,)
             ).fetchone()["company_name"]
 
-        # Get set of contracts THIS USER/COMPANY already bid on (using real identifier)
-        with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT DISTINCT contract_id 
@@ -299,14 +297,13 @@ def contracts(request: Request):
             """, (company,))
             already_bid_ids = {row[0] for row in cursor.fetchall()}   # set of project_id / contract_id values
 
-        # Filter using the real identifier column
         all_contracts = df_bidding.to_dict(orient="records")
 
         available_contracts = []
         bid_contracts     = []   # optional – for showing already bid ones
 
         for contract in all_contracts:
-            cid = contract.get("Contract_number")   # ← CHANGE to your real column name
+            cid = contract.get("Project_id")   # ← CHANGE to your real column name
             if cid is None:
                 continue  # skip broken rows
 
@@ -315,9 +312,7 @@ def contracts(request: Request):
             else:
                 available_contracts.append(contract)
 
-        available = available_contracts
-
-        if not available:
+        if not available_contracts:
             return HTMLResponse("""
             <div style="max-width:700px;margin:80px auto;padding:40px;background:white;border-radius:16px;text-align:center;box-shadow:0 8px 30px #0002;">
                 <div style="font-size:80px">🏆</div>
@@ -330,7 +325,6 @@ def contracts(request: Request):
             </div>
             """)
 
-        # You can now pass both to template if you want to show "already bid" section
         return templates.TemplateResponse("contracts_fragment.html", {
             "request": request,
             "contracts": available_contracts,          # only not-yet-bid
@@ -384,10 +378,10 @@ async def submit_bid(
     status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
 
     try:
-        real_contract_id = contract["Contract_number"]
+        real_contract_id = contract.get("Project_id")
 
         if real_contract_id is None:
-            raise HTTPException(500, "Contract is missing unique identifier (Contract_number column not found)")
+            raise HTTPException(500, "Contract is missing unique identifier (Project_id column not found)")
 
         with get_db() as conn:
             cursor = conn.cursor()
@@ -405,7 +399,7 @@ async def submit_bid(
 
         # Email (non-blocking)
         send_bid_notification(
-            email, company_name, contract.get("project_name", "Unknown"),
+            email, company_name, contract.get("Project_name", "Unknown"),
             status_msg, bid_amount
         )
 
@@ -414,7 +408,7 @@ async def submit_bid(
             <h1 style="color:#065f46;font-size:2.1rem;margin-bottom:0.8rem;">Bid Submitted Successfully!</h1>
             <p style="font-size:1.15rem;color:#0f766e;margin:1rem 0 2rem;">Bid ID: <strong>#{bid_id}</strong></p>
             <div style="background:white;padding:1.5rem;border-radius:12px;margin:1.5rem 0;text-align:left;">
-                <p><strong>Contract:</strong> {contract.get('project_name','—')}</p>
+                <p><strong>Contract:</strong> {contract.get('Project_name','—')}</p>
                 <p><strong>Amount:</strong> ₦{bid_amount:,.2f} Billion</p>
                 <p><strong>AI Status:</strong> <span style="color:{'#10b981' if 'Approved' in status_msg else '#ef4444'};">{status_msg}</span></p>
             </div>
@@ -453,6 +447,7 @@ def admin_login_page():
     </body>
     </html>
     """)
+
 @app.get("/debug/admin-check")
 def debug_admin_check():
     with get_db() as conn:
@@ -465,6 +460,7 @@ def debug_admin_check():
             }
         else:
             return {"exists": False}
+
 @app.post("/admin/login", response_class=HTMLResponse)
 async def admin_login(response: Response, username: str = Form(...), password: str = Form(...)):
     hashed = hashlib.sha256(password.encode()).hexdigest()
@@ -501,7 +497,7 @@ def admin_dashboard(request: Request):
         enhanced = []
         for row in bids:
             try:
-                contract_row = df_bidding[df_bidding["Contract_number"] == row["contract_id"]]
+                contract_row = df_bidding[df_bidding["Project_id"] == row["contract_id"]]
                 if not contract_row.empty:
                     contract = contract_row.iloc[0]
                     fair_min, fair_max = get_fair_price_range(contract)
