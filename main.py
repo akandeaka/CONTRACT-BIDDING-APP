@@ -289,13 +289,40 @@ def contracts(request: Request):
                 (user_id,)
             ).fetchone()["company_name"]
 
-            bid_ids = {row["contract_id"] for row in conn.execute(
-                "SELECT contract_id FROM bids WHERE company_name = ?",
-                (company,)
-            ).fetchall()}
+        # Get set of contracts THIS USER/COMPANY already bid on (using real identifier)
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT contract_id 
+                FROM bids 
+                WHERE company_name = ?
+            """, (company,))
+            already_bid_ids = {row[0] for row in cursor.fetchall()}   # set of project_id / contract_id values
 
-        all_contracts = df_bidding.to_dict("records")
-        available = [c for i, c in enumerate(all_contracts) if i not in bid_ids]
+        # Filter using the real identifier column
+        all_contracts = df_bidding.to_dict(orient="records")
+
+        available_contracts = []
+        bid_contracts     = []   # optional – for showing already bid ones
+
+        for contract in all_contracts:
+            cid = contract.get("project_id")   # ← CHANGE to your real column name
+            if cid is None:
+                continue  # skip broken rows
+
+            if cid in already_bid_ids:
+                bid_contracts.append(contract)
+            else:
+                available_contracts.append(contract)
+
+        # You can now pass both to template if you want to show "already bid" section
+        return templates.TemplateResponse("contracts_fragment.html", {
+            "request": request,
+            "contracts": available_contracts,          # only not-yet-bid
+            "bid_contracts": bid_contracts,            # optional
+            "user_id": user_id,
+            "has_bids": len(bid_contracts) > 0
+        })
 
         if not available:
             return HTMLResponse("""
@@ -318,7 +345,26 @@ def contracts(request: Request):
 
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
+{% if contracts|length == 0 and has_bids %}
+    <div style="text-align:center; padding: 3rem; background:#f0fdf4; border-radius:16px;">
+        <h2 style="color:#065f46;">All available contracts have been bid on ✓</h2>
+        <p>You have successfully submitted bids for every contract visible to you.</p>
+    </div>
+{% elif contracts|length == 0 %}
+    <p>No contracts available at this time.</p>
+{% else %}
+    <!-- normal list of available contracts -->
+{% endif %}
 
+<!-- Optional: show already bid ones -->
+{% if bid_contracts %}
+<h3 style="margin-top:2rem; color:#1e40af;">Contracts you have already bid on</h3>
+<ul>
+{% for c in bid_contracts %}
+    <li>{{ c.project_name }} (Bid submitted)</li>
+{% endfor %}
+</ul>
+{% endif %}
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
     try:
@@ -340,7 +386,7 @@ def contract_detail(request: Request, contract_id: int):
 async def submit_bid(
     request: Request,
     contract_id: int,
-    company_name: str = Form(...),
+    project_id: str = Form(...),
     cac_number: str = Form(...),
     email: str = Form(...),
     phone: str = Form(...),
@@ -604,4 +650,5 @@ async def admin_logout(response: Response):
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
 
