@@ -554,7 +554,7 @@ def admin_dashboard(request: Request):
                 </tr>
             """
 
-        return HTMLResponse(f"""
+                return HTMLResponse(f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -605,6 +605,7 @@ def admin_dashboard(request: Request):
             </div>
         </body>
         </html>
+        """)
         """.format(total_bids=total_bids, fair_count=fair_count, unfair_count=unfair_count, total_value=total_value, body_html=body_html))
 
     except HTTPException:
@@ -618,3 +619,4 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
