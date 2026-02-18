@@ -540,40 +540,46 @@ def admin_dashboard(request: Request):
             row_class = "fair" if b["is_fair"] else "unfair"
             assessment = "✅ FAIR" if b["is_fair"] else "⚠️ HIGH"
             color_class = "color:#10b981;" if b["is_fair"] else "color:#f59e0b;"
-            body_html += f"""
+            body_html += """
                 <tr class="{row_class}">
-                    <td><strong>#{b['bid_id']}</strong></td>
-                    <td>{b['contract_name']}</td>
-                    <td>{b['company_name']}<br><small>CAC: {b['cac_number']}</small></td>
-                    <td>{b['email']}<br><small>{b['phone']}</small></td>
-                    <td>₦{b['bid_amount']:,.2f}</td>
-                    <td>₦{b['fair_min']:,.2f} – ₦{b['fair_max']:,.2f}</td>
+                    <td><strong>#{bid_id}</strong></td>
+                    <td>{contract_name}</td>
+                    <td>{company_name}<br><small>CAC: {cac_number}</small></td>
+                    <td>{email}<br><small>{phone}</small></td>
+                    <td>₦{bid_amount:,.2f}</td>
+                    <td>₦{fair_min:,.2f} – ₦{fair_max:,.2f}</td>
                     <td style="{color_class}font-weight:bold;">{assessment}</td>
-                    <td>{b['status']}</td>
-                    <td><small>{b['timestamp']}</small></td>
+                    <td>{status}</td>
+                    <td><small>{timestamp}</small></td>
                 </tr>
-            """
+            """.format(
+                row_class=row_class, bid_id=b['bid_id'], contract_name=b['contract_name'], 
+                company_name=b['company_name'], cac_number=b['cac_number'], email=b['email'], 
+                phone=b['phone'], bid_amount=b['bid_amount'], fair_min=b['fair_min'], 
+                fair_max=b['fair_max'], color_class=color_class, assessment=assessment, 
+                status=b['status'], timestamp=b['timestamp']
+            )
 
-                return HTMLResponse(f"""
+        return HTMLResponse("""
         <!DOCTYPE html>
         <html>
         <head>
             <title>AISEC Admin Dashboard</title>
             <style>
-                :root {{ --primary:#2563eb; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; }}
-                body {{ font-family:Segoe UI,sans-serif; background:#f8fafc; margin:0; }}
-                .header {{ background:linear-gradient(135deg,#1e40af,#0c4a6e); color:white; padding:1.2rem 3rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; box-shadow:0 4px 12px #0003; }}
-                .container {{ max-width:1800px; margin:2rem auto; padding:0 1.5rem; }}
-                .stats-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1.5rem; margin-bottom:2.5rem; }}
-                .stat-card {{ background:white; border-radius:16px; padding:1.8rem; text-align:center; box-shadow:0 6px 20px #00000011; border-top:5px solid var(--primary); }}
-                .stat-value {{ font-size:2.8rem; font-weight:800; background:linear-gradient(90deg,var(--primary),#0ea5e9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }}
-                table {{ width:100%; border-collapse:collapse; background:white; border-radius:16px; overflow:hidden; box-shadow:0 10px 35px #0000001a; }}
-                th {{ background:#f1f5f9; padding:1.1rem; text-align:left; font-weight:700; color:#1e40af; position:sticky; top:70px; z-index:10; }}
-                td {{ padding:1rem; border-bottom:1px solid #e2e8f0; }}
-                tr:hover {{ background:#f8fafc; }}
-                .fair {{ background:linear-gradient(to right,#f0fdf4 96%,#bbf7d0); }}
-                .unfair {{ background:linear-gradient(to right,#fffbeb 96%,#fde68a); }}
-                .logout-btn {{ background:#ef4444; color:white; padding:0.7rem 1.6rem; border-radius:10px; text-decoration:none; font-weight:bold; }}
+                :root { --primary:#2563eb; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; }
+                body { font-family:Segoe UI,sans-serif; background:#f8fafc; margin:0; }
+                .header { background:linear-gradient(135deg,#1e40af,#0c4a6e); color:white; padding:1.2rem 3rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; box-shadow:0 4px 12px #0003; }
+                .container { max-width:1800px; margin:2rem auto; padding:0 1.5rem; }
+                .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1.5rem; margin-bottom:2.5rem; }
+                .stat-card { background:white; border-radius:16px; padding:1.8rem; text-align:center; box-shadow:0 6px 20px #00000011; border-top:5px solid var(--primary); }
+                .stat-value { font-size:2.8rem; font-weight:800; background:linear-gradient(90deg,var(--primary),#0ea5e9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+                table { width:100%; border-collapse:collapse; background:white; border-radius:16px; overflow:hidden; box-shadow:0 10px 35px #0000001a; }
+                th { background:#f1f5f9; padding:1.1rem; text-align:left; font-weight:700; color:#1e40af; position:sticky; top:70px; z-index:10; }
+                td { padding:1rem; border-bottom:1px solid #e2e8f0; }
+                tr:hover { background:#f8fafc; }
+                .fair { background:linear-gradient(to right,#f0fdf4 96%,#bbf7d0); }
+                .unfair { background:linear-gradient(to right,#fffbeb 96%,#fde68a); }
+                .logout-btn { background:#ef4444; color:white; padding:0.7rem 1.6rem; border-radius:10px; text-decoration:none; font-weight:bold; }
             </style>
         </head>
         <body>
@@ -605,7 +611,6 @@ def admin_dashboard(request: Request):
             </div>
         </body>
         </html>
-        """)
         """.format(total_bids=total_bids, fair_count=fair_count, unfair_count=unfair_count, total_value=total_value, body_html=body_html))
 
     except HTTPException:
@@ -619,4 +624,3 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
-
