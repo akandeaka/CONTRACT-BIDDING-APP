@@ -9,3 +9,5 @@ xgboost==2.0.3
 scikit-learn
 joblib
 python-multipart
+jinja2>=3.1.0
+# plus your other packages: pandas, joblib, sqlite3 is built-in, etc.
