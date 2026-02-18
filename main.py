@@ -1,7 +1,7 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from fastapi import FastAPI, Request, Form, HTTPException, Response, Depends
+from fastapi import FastAPI, Request, Form, HTTPException, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,13 +14,13 @@ import subprocess
 import sys
 import secrets
 from contextlib import contextmanager
-from typing import Dict, Any
+from typing import Dict
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # ────────────────────────────────────────────────
-#  CORS (no trailing spaces!)
+#  CORS
 # ────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -44,9 +44,8 @@ BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM
 MODEL_PATH = "model.pkl"
 DB_PATH = "bids.db"
 
-# In-memory sessions (use Redis in production!)
-user_sessions: Dict[str, int] = {}     # token → user_id
-admin_sessions: Dict[str, int] = {}    # token → admin_id
+user_sessions: Dict[str, int] = {}
+admin_sessions: Dict[str, int] = {}
 
 # ────────────────────────────────────────────────
 #  Database helpers
@@ -96,7 +95,6 @@ def init_db():
         )
         """)
 
-        # Create default admin (CHANGE THIS IN PRODUCTION!)
         try:
             default_pw = hashlib.sha256("admin123".encode()).hexdigest()
             cursor.execute(
@@ -114,13 +112,13 @@ init_db()
 # ────────────────────────────────────────────────
 def ensure_model():
     if not os.path.exists(MODEL_PATH):
-        print("Model not found → running training script...")
+        print("Training model...")
         subprocess.run([sys.executable, "train_model.py"], check=True)
 
 ensure_model()
 
 df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)
-df_bidding   = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
+df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
 # ────────────────────────────────────────────────
@@ -165,7 +163,7 @@ AISEC Team"""
         return False
 
 # ────────────────────────────────────────────────
-#  Session helpers
+#  Sessions
 # ────────────────────────────────────────────────
 def create_user_session(user_id: int) -> str:
     token = secrets.token_urlsafe(40)
@@ -190,7 +188,7 @@ def get_current_admin(request: Request) -> int:
     return admin_sessions[token]
 
 # ────────────────────────────────────────────────
-#  Price helpers
+#  Helpers
 # ────────────────────────────────────────────────
 def adjust_for_inflation(base_price: float, inflation_rate=0.12, years=2) -> float:
     return base_price * ((1 + inflation_rate) ** years)
@@ -236,12 +234,12 @@ async def register_user(
                 (company_name, cac_number, email, hashed)
             )
             conn.commit()
-        return HTMLResponse("""
+        return HTMLResponse(content="""
         <h2 style="color:green;text-align:center">Registration successful!</h2>
         <p style="text-align:center"><a href="/login">Login here</a></p>
         """)
     except sqlite3.IntegrityError:
-        return HTMLResponse("""
+        return HTMLResponse(content="""
         <h2 style="color:red;text-align:center">Email already registered</h2>
         <p style="text-align:center"><a href="/login">Login here</a></p>
         """, status_code=400)
@@ -262,27 +260,84 @@ async def login_user(response: Response, email: str = Form(...), password: str =
     if user:
         token = create_user_session(user["id"])
         resp = RedirectResponse("/contracts", status_code=303)
-        resp.set_cookie("session_token", token, httponly=True, max_age=86400)
+        resp.set_cookie(key="session_token", value=token, httponly=True, max_age=86400)
         return resp
 
-    return HTMLResponse("""
+    return HTMLResponse(content="""
     <h2 style="color:red;text-align:center">Invalid credentials</h2>
     <p style="text-align:center"><a href="/login">Try again</a></p>
     """, status_code=401)
 
 @app.get("/logout", response_class=HTMLResponse)
 async def logout(response: Response):
-    response = RedirectResponse("/login", status_code=303)
-    response.delete_cookie("session_token")
-    return response
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie("session_token")
+    return resp
 
 # ────────────────────────────────────────────────
-#  Contracts & Bidding
+#  Contracts list + detail
 # ────────────────────────────────────────────────
+@app.get("/contracts", response_class=HTMLResponse)
+def contracts(request: Request):
+    try:
+        user_id = get_current_user(request)
+        with get_db() as conn:
+            company_row = conn.execute(
+                "SELECT company_name FROM users WHERE id = ?",
+                (user_id,)
+            ).fetchone()
+            if not company_row:
+                raise HTTPException(404, "User not found")
+
+            company = company_row["company_name"]
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
+            already_bid_ids = {row[0] for row in cursor.fetchall()}
+
+        all_contracts = df_bidding.to_dict(orient="records")
+        available = []
+        already_bid = []
+
+        for c in all_contracts:
+            cid = str(c.get("Project_id", "")).strip()
+            if not cid:
+                continue
+            if cid in already_bid_ids:
+                already_bid.append(c)
+            else:
+                available.append(c)
+
+        if not available:
+            return HTMLResponse(content="""
+            <div style="max-width:700px; margin:80px auto; padding:40px; background:white; border-radius:16px; text-align:center; box-shadow:0 8px 30px #0002;">
+                <div style="font-size:80px">🏆</div>
+                <h2>All Contracts Have Been Bid On!</h2>
+                <p style="font-size:18px; color:#555; margin:20px 0;">
+                    Your company has submitted bids for every available contract.<br>
+                    Administrators will review submissions shortly.
+                </p>
+                <a href="/logout" style="padding:14px 40px; background:#e11d48; color:white; border-radius:10px; text-decoration:none; font-weight:bold;">Logout</a>
+            </div>
+            """)
+
+        return templates.TemplateResponse("contracts_fragment.html", {
+            "request": request,
+            "contracts": available,
+            "bid_contracts": already_bid,
+            "user_id": user_id,
+            "has_bids": bool(already_bid)
+        })
+
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            return RedirectResponse("/login", status_code=303)
+        raise
+
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
     try:
-        get_current_user(request)  # auth check
+        get_current_user(request)
         if contract_id < 0 or contract_id >= len(df_bidding):
             raise HTTPException(404, "Contract not found")
         contract = df_bidding.iloc[contract_id].to_dict()
@@ -291,68 +346,11 @@ def contract_detail(request: Request, contract_id: int):
             "contract": contract,
             "contract_index": contract_id
         })
-    except HTTPException as e:
-        if e.status_code == 401:
+    except HTTPException as exc:
+        if exc.status_code == 401:
             return RedirectResponse("/login", status_code=303)
-        return HTMLResponse(f"<h2>Error {e.status_code}</h2><p>{e.detail}</p>", status_code=e.status_code)
-    contract = df_bidding.iloc[contract_id]
-    real_contract_id = str(contract.get("Project_id", "")).strip()   # force string + clean
+        return HTMLResponse(f"<h2>Error {exc.status_code}</h2><p>{exc.detail}</p>", status_code=exc.status_code)
 
-    if not real_contract_id:
-        raise HTTPException(500, "Missing or empty Project_id in contract data")
-
-    # ... fair price calculation ...
-
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO bids (
-                contract_id, user_id, company_name, cac_number, email, phone,
-                bid_amount, equipment_list, workforce, status
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)
-        """, (
-            real_contract_id,          # ← string Project_id
-            user_id,
-            company_name,
-            cac_number,
-            email,
-            phone,
-            bid_amount,
-            equipment_list,
-            workforce,
-            status_msg
-        ))
-        bid_id = cursor.lastrowid
-        conn.commit()
-             already_bid_ids = {row[0] for row in cursor.fetchall()}   # will be strings
-
-        all_contracts = df_bidding.to_dict(orient="records")
-
-        available_contracts = []
-        bid_contracts = []
-
-        for contract in all_contracts:
-            cid = str(contract.get("Project_id", "")).strip()
-            if not cid:
-                continue
-
-            if cid in already_bid_ids:
-                bid_contracts.append(contract)
-            else:
-                available_contracts.append(contract)
-
-        if not available_contracts:
-            # your nice "all bid" message here
-            return HTMLResponse("""... your all-bids-completed HTML ...""")
-
-        return templates.TemplateResponse("contracts_fragment.html", {
-            "request": request,
-            "contracts": available_contracts,
-            "bid_contracts": bid_contracts,
-            "user_id": user_id,
-            "has_bids": bool(bid_contracts),
-            "company_name": company   # optional – can help debugging
-        })   
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
     request: Request,
@@ -366,7 +364,7 @@ async def submit_bid(
     workforce: str = Form(...)
 ):
     try:
-        user_id = get_current_user(request)  # will raise 401 if not logged in
+        user_id = get_current_user(request)
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
 
@@ -378,10 +376,9 @@ async def submit_bid(
     status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
 
     try:
-        real_contract_id = contract.get("Project_id")
-
-        if real_contract_id is None:
-            raise HTTPException(500, "Contract is missing unique identifier (Project_id column not found)")
+        real_contract_id = str(contract.get("Project_id", "")).strip()
+        if not real_contract_id:
+            raise HTTPException(500, "Missing or empty Project_id in contract data")
 
         with get_db() as conn:
             cursor = conn.cursor()
@@ -391,24 +388,31 @@ async def submit_bid(
                     bid_amount, equipment_list, workforce, status
                 ) VALUES (?,?,?,?,?,?,?,?,?,?)
             """, (
-                real_contract_id, user_id, company_name, cac_number, email, phone,
-                bid_amount, equipment_list, workforce, status_msg
+                real_contract_id,
+                user_id,
+                company_name,
+                cac_number,
+                email,
+                phone,
+                bid_amount,
+                equipment_list,
+                workforce,
+                status_msg
             ))
             bid_id = cursor.lastrowid
             conn.commit()
 
-        # Email (non-blocking)
         send_bid_notification(
             email, company_name, contract.get("Project_name", "Unknown"),
             status_msg, bid_amount
         )
 
         return HTMLResponse(f"""
-        <div style="max-width:750px;margin:40px auto;padding:35px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 35px #10b9833;">
+        <div style="max-width:750px;margin:40px auto;padding:35px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 35px rgba(16,185,131,0.2);">
             <h1 style="color:#065f46;font-size:2.1rem;margin-bottom:0.8rem;">Bid Submitted Successfully!</h1>
             <p style="font-size:1.15rem;color:#0f766e;margin:1rem 0 2rem;">Bid ID: <strong>#{bid_id}</strong></p>
             <div style="background:white;padding:1.5rem;border-radius:12px;margin:1.5rem 0;text-align:left;">
-                <p><strong>Contract:</strong> {contract.get('Project_name','—')}</p>
+                <p><strong>Contract:</strong> {contract.get('Project_name', '—')}</p>
                 <p><strong>Amount:</strong> ₦{bid_amount:,.2f} Billion</p>
                 <p><strong>AI Status:</strong> <span style="color:{'#10b981' if 'Approved' in status_msg else '#ef4444'};">{status_msg}</span></p>
             </div>
@@ -427,7 +431,7 @@ async def submit_bid(
         """, status_code=500)
 
 # ────────────────────────────────────────────────
-#  ADMIN ROUTES
+#  Admin
 # ────────────────────────────────────────────────
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page():
@@ -456,10 +460,9 @@ def debug_admin_check():
             return {
                 "exists": True,
                 "username_in_db": row["username"],
-                "hashed_password_in_db": row["hashed_password"][:20] + "...",  # partial for safety
+                "hashed_password_in_db": row["hashed_password"][:20] + "..."
             }
-        else:
-            return {"exists": False}
+        return {"exists": False}
 
 @app.post("/admin/login", response_class=HTMLResponse)
 async def admin_login(response: Response, username: str = Form(...), password: str = Form(...)):
@@ -497,15 +500,7 @@ def admin_dashboard(request: Request):
         enhanced = []
         for row in bids:
             try:
-                contract_row = df_bidding[df_bidding["Project_id"] == row["contract_id"]]
-                if not contract_row.empty:
-                    contract = contract_row.iloc[0]
-                            enhanced = []
-        for row in bids:
-            try:
-                # Correct lookup by Project_id (string)
                 matching = df_bidding[df_bidding["Project_id"].astype(str).str.strip() == str(row["contract_id"]).strip()]
-
                 if not matching.empty:
                     contract = matching.iloc[0]
                     fair_min, fair_max = get_fair_price_range(contract)
@@ -530,73 +525,35 @@ def admin_dashboard(request: Request):
                     "status": row["status"],
                     "timestamp": row["timestamp"]
                 })
-
             except Exception as e:
-                print(f"Enhance error bid {row['id']}: {e}")
-                continue
-                    fair_min, fair_max = get_fair_price_range(contract)
-                    is_fair = fair_min <= row["bid_amount"] <= fair_max
-                    enhanced.append({
-                        "bid_id": row["id"],
-                        "contract_name": contract.get("Project_name", f"Contract #{row['contract_id']}"),
-                        "company_name": row["company_name"],
-                        "cac_number": row["cac_number"],
-                        "email": row["email"],
-                        "phone": row["phone"],
-                        "bid_amount": row["bid_amount"],
-                        "fair_min": fair_min,
-                        "fair_max": fair_max,
-                        "is_fair": is_fair,
-                        "status": row["status"],
-                        "timestamp": row["timestamp"]
-                    })
-                else:
-                    enhanced.append({
-                        "bid_id": row["id"],
-                        "contract_name": f"Unknown Contract #{row['contract_id']}",
-                        "company_name": row["company_name"],
-                        "cac_number": row["cac_number"],
-                        "email": row["email"],
-                        "phone": row["phone"],
-                        "bid_amount": row["bid_amount"],
-                        "fair_min": 0,
-                        "fair_max": 0,
-                        "is_fair": False,
-                        "status": row["status"],
-                        "timestamp": row["timestamp"]
-                    })
-            except Exception as e:
-                print(f"Error enhancing bid {row['id']}: {e}")
+                print(f"Error processing bid {row['id']}: {e}")
                 continue
 
         total_bids = len(enhanced)
         fair_count = sum(1 for b in enhanced if b["is_fair"])
         unfair_count = total_bids - fair_count
-        total_value = sum(b["bid_amount"] for b in enhanced)
+        total_value = sum(b["bid_amount"] for b in enhanced) if enhanced else 0
 
-        body_html = ""
-        if not enhanced:
-            body_html = '<tr><td colspan="9" class="empty-state">No Bids Submitted Yet</td></tr>'
+        body_html = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:#64748b;">No Bids Submitted Yet</td></tr>' if not enhanced else ""
 
         for b in enhanced:
             row_class = "fair" if b["is_fair"] else "unfair"
             assessment = "✅ FAIR" if b["is_fair"] else "⚠️ HIGH"
             color_class = "color:#10b981;" if b["is_fair"] else "color:#f59e0b;"
             body_html += f"""
-                    <tr class="{row_class}">
-                        <td><strong>#{b['bid_id']}</strong></td>
-                        <td>{b['contract_name']}</td>
-                        <td>{b['company_name']}<br><small>CAC: {b['cac_number']}</small></td>
-                        <td>{b['email']}<br><small>{b['phone']}</small></td>
-                        <td>₦{b['bid_amount']:,.2f}</td>
-                        <td>₦{b['fair_min']:,.2f} – ₦{b['fair_max']:,.2f}</td>
-                        <td style="{color_class};font-weight:bold;">{assessment}</td>
-                        <td>{b['status']}</td>
-                        <td><small>{b['timestamp']}</small></td>
-                    </tr>
+                <tr class="{row_class}">
+                    <td><strong>#{b['bid_id']}</strong></td>
+                    <td>{b['contract_name']}</td>
+                    <td>{b['company_name']}<br><small>CAC: {b['cac_number']}</small></td>
+                    <td>{b['email']}<br><small>{b['phone']}</small></td>
+                    <td>₦{b['bid_amount']:,.2f}</td>
+                    <td>₦{b['fair_min']:,.2f} – ₦{b['fair_max']:,.2f}</td>
+                    <td style="{color_class}font-weight:bold;">{assessment}</td>
+                    <td>{b['status']}</td>
+                    <td><small>{b['timestamp']}</small></td>
+                </tr>
             """
 
-        # Build HTML (your original styling preserved + fixes)
         return HTMLResponse(f"""
         <!DOCTYPE html>
         <html>
@@ -648,17 +605,16 @@ def admin_dashboard(request: Request):
             </div>
         </body>
         </html>
-        """)
+        """.format(total_bids=total_bids, fair_count=fair_count, unfair_count=unfair_count, total_value=total_value, body_html=body_html))
 
     except HTTPException:
         return RedirectResponse("/admin/login", status_code=303)
     except Exception as e:
-        print(f"Dashboard error: {e}")
+        print(f"Dashboard error: {str(e)}")
         return HTMLResponse(f"<h1>Server Error</h1><pre>{str(e)}</pre>", status_code=500)
 
 @app.get("/admin/logout", response_class=HTMLResponse)
 async def admin_logout(response: Response):
-    response = RedirectResponse("/admin/login", status_code=303)
-    response.delete_cookie("admin_token")
-    return response
-
+    resp = RedirectResponse("/admin/login", status_code=303)
+    resp.delete_cookie("admin_token")
+    return resp
