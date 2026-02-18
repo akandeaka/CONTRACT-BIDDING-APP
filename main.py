@@ -532,7 +532,7 @@ def admin_dashboard(request: Request):
         total_bids = len(enhanced)
         fair_count = sum(1 for b in enhanced if b["is_fair"])
         unfair_count = total_bids - fair_count
-        total_value = sum(b["bid_amount"] for b in enhanced) if enhanced else 0
+        total_value = sum(b["bid_amount"] for b in enhanced) if enhanced else 0.0
 
         body_html = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:#64748b;">No Bids Submitted Yet</td></tr>' if not enhanced else ""
 
@@ -540,25 +540,19 @@ def admin_dashboard(request: Request):
             row_class = "fair" if b["is_fair"] else "unfair"
             assessment = "✅ FAIR" if b["is_fair"] else "⚠️ HIGH"
             color_class = "color:#10b981;" if b["is_fair"] else "color:#f59e0b;"
-            body_html += """
+            body_html += f"""
                 <tr class="{row_class}">
-                    <td><strong>#{bid_id}</strong></td>
-                    <td>{contract_name}</td>
-                    <td>{company_name}<br><small>CAC: {cac_number}</small></td>
-                    <td>{email}<br><small>{phone}</small></td>
-                    <td>₦{bid_amount:,.2f}</td>
-                    <td>₦{fair_min:,.2f} – ₦{fair_max:,.2f}</td>
+                    <td><strong>#{b['bid_id']}</strong></td>
+                    <td>{b['contract_name']}</td>
+                    <td>{b['company_name']}<br><small>CAC: {b['cac_number']}</small></td>
+                    <td>{b['email']}<br><small>{b['phone']}</small></td>
+                    <td>₦{b['bid_amount']:,.2f}</td>
+                    <td>₦{b['fair_min']:,.2f} – ₦{b['fair_max']:,.2f}</td>
                     <td style="{color_class}font-weight:bold;">{assessment}</td>
-                    <td>{status}</td>
-                    <td><small>{timestamp}</small></td>
+                    <td>{b['status']}</td>
+                    <td><small>{b['timestamp']}</small></td>
                 </tr>
-            """.format(
-                row_class=row_class, bid_id=b['bid_id'], contract_name=b['contract_name'], 
-                company_name=b['company_name'], cac_number=b['cac_number'], email=b['email'], 
-                phone=b['phone'], bid_amount=b['bid_amount'], fair_min=b['fair_min'], 
-                fair_max=b['fair_max'], color_class=color_class, assessment=assessment, 
-                status=b['status'], timestamp=b['timestamp']
-            )
+            """
 
         return HTMLResponse(f"""
         <!DOCTYPE html>
@@ -612,6 +606,7 @@ def admin_dashboard(request: Request):
         </body>
         </html>
         """)
+
     except HTTPException:
         return RedirectResponse("/admin/login", status_code=303)
     except Exception as e:
@@ -623,5 +618,6 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
 
 
