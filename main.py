@@ -279,63 +279,6 @@ async def logout(response: Response):
 # ────────────────────────────────────────────────
 #  Contracts & Bidding
 # ────────────────────────────────────────────────
-@app.get("/contracts", response_class=HTMLResponse)
-def contracts(request: Request):
-    try:
-        user_id = get_current_user(request)
-        with get_db() as conn:
-            company = conn.execute(
-                "SELECT company_name FROM users WHERE id = ?",
-                (user_id,)
-            ).fetchone()["company_name"]
-
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT DISTINCT contract_id 
-                FROM bids 
-                WHERE company_name = ?
-            """, (company,))
-            already_bid_ids = {row[0] for row in cursor.fetchall()}   # set of project_id / contract_id values
-
-        all_contracts = df_bidding.to_dict(orient="records")
-
-        available_contracts = []
-        bid_contracts     = []   # optional – for showing already bid ones
-
-        for contract in all_contracts:
-            cid = contract.get("Project_id")   # ← CHANGE to your real column name
-            if cid is None:
-                continue  # skip broken rows
-
-            if cid in already_bid_ids:
-                bid_contracts.append(contract)
-            else:
-                available_contracts.append(contract)
-
-        if not available_contracts:
-            return HTMLResponse("""
-            <div style="max-width:700px;margin:80px auto;padding:40px;background:white;border-radius:16px;text-align:center;box-shadow:0 8px 30px #0002;">
-                <div style="font-size:80px">🏆</div>
-                <h2>All Contracts Have Been Bid On!</h2>
-                <p style="font-size:18px;color:#555;margin:20px 0;">
-                    Your company has submitted bids for every available contract.<br>
-                    Administrators will review submissions shortly.
-                </p>
-                <a href="/logout" style="padding:14px 40px;background:#e11d48;color:white;border-radius:10px;text-decoration:none;font-weight:bold;">Logout</a>
-            </div>
-            """)
-
-        return templates.TemplateResponse("contracts_fragment.html", {
-            "request": request,
-            "contracts": available_contracts,          # only not-yet-bid
-            "bid_contracts": bid_contracts,            # optional
-            "user_id": user_id,
-            "has_bids": len(bid_contracts) > 0
-        })
-
-    except HTTPException:
-        return RedirectResponse("/login", status_code=303)
-
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
     try:
@@ -352,7 +295,64 @@ def contract_detail(request: Request, contract_id: int):
         if e.status_code == 401:
             return RedirectResponse("/login", status_code=303)
         return HTMLResponse(f"<h2>Error {e.status_code}</h2><p>{e.detail}</p>", status_code=e.status_code)
+    contract = df_bidding.iloc[contract_id]
+    real_contract_id = str(contract.get("Project_id", "")).strip()   # force string + clean
 
+    if not real_contract_id:
+        raise HTTPException(500, "Missing or empty Project_id in contract data")
+
+    # ... fair price calculation ...
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO bids (
+                contract_id, user_id, company_name, cac_number, email, phone,
+                bid_amount, equipment_list, workforce, status
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, (
+            real_contract_id,          # ← string Project_id
+            user_id,
+            company_name,
+            cac_number,
+            email,
+            phone,
+            bid_amount,
+            equipment_list,
+            workforce,
+            status_msg
+        ))
+        bid_id = cursor.lastrowid
+        conn.commit()
+             already_bid_ids = {row[0] for row in cursor.fetchall()}   # will be strings
+
+        all_contracts = df_bidding.to_dict(orient="records")
+
+        available_contracts = []
+        bid_contracts = []
+
+        for contract in all_contracts:
+            cid = str(contract.get("Project_id", "")).strip()
+            if not cid:
+                continue
+
+            if cid in already_bid_ids:
+                bid_contracts.append(contract)
+            else:
+                available_contracts.append(contract)
+
+        if not available_contracts:
+            # your nice "all bid" message here
+            return HTMLResponse("""... your all-bids-completed HTML ...""")
+
+        return templates.TemplateResponse("contracts_fragment.html", {
+            "request": request,
+            "contracts": available_contracts,
+            "bid_contracts": bid_contracts,
+            "user_id": user_id,
+            "has_bids": bool(bid_contracts),
+            "company_name": company   # optional – can help debugging
+        })   
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
     request: Request,
@@ -500,6 +500,40 @@ def admin_dashboard(request: Request):
                 contract_row = df_bidding[df_bidding["Project_id"] == row["contract_id"]]
                 if not contract_row.empty:
                     contract = contract_row.iloc[0]
+                            enhanced = []
+        for row in bids:
+            try:
+                # Correct lookup by Project_id (string)
+                matching = df_bidding[df_bidding["Project_id"].astype(str).str.strip() == str(row["contract_id"]).strip()]
+
+                if not matching.empty:
+                    contract = matching.iloc[0]
+                    fair_min, fair_max = get_fair_price_range(contract)
+                    is_fair = fair_min <= row["bid_amount"] <= fair_max
+                    contract_name = contract.get("Project_name", f"Contract {row['contract_id']}")
+                else:
+                    contract_name = f"Unknown ({row['contract_id']})"
+                    fair_min = fair_max = 0
+                    is_fair = False
+
+                enhanced.append({
+                    "bid_id": row["id"],
+                    "contract_name": contract_name,
+                    "company_name": row["company_name"] or "—",
+                    "cac_number": row["cac_number"] or "—",
+                    "email": row["email"] or "—",
+                    "phone": row["phone"] or "—",
+                    "bid_amount": row["bid_amount"],
+                    "fair_min": fair_min,
+                    "fair_max": fair_max,
+                    "is_fair": is_fair,
+                    "status": row["status"],
+                    "timestamp": row["timestamp"]
+                })
+
+            except Exception as e:
+                print(f"Enhance error bid {row['id']}: {e}")
+                continue
                     fair_min, fair_max = get_fair_price_range(contract)
                     is_fair = fair_min <= row["bid_amount"] <= fair_max
                     enhanced.append({
@@ -627,3 +661,4 @@ async def admin_logout(response: Response):
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
