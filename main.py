@@ -75,7 +75,7 @@ def init_db():
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS bids (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            contract_id INTEGER NOT NULL,
+            contract_id TEXT NOT NULL,
             user_id INTEGER,
             company_name TEXT NOT NULL,
             cac_number TEXT NOT NULL,
@@ -306,7 +306,7 @@ def contracts(request: Request):
         bid_contracts     = []   # optional – for showing already bid ones
 
         for contract in all_contracts:
-            cid = contract.get("project_id")   # ← CHANGE to your real column name
+            cid = contract.get("Contract_number")   # ← CHANGE to your real column name
             if cid is None:
                 continue  # skip broken rows
 
@@ -315,14 +315,7 @@ def contracts(request: Request):
             else:
                 available_contracts.append(contract)
 
-        # You can now pass both to template if you want to show "already bid" section
-        return templates.TemplateResponse("contracts_fragment.html", {
-            "request": request,
-            "contracts": available_contracts,          # only not-yet-bid
-            "bid_contracts": bid_contracts,            # optional
-            "user_id": user_id,
-            "has_bids": len(bid_contracts) > 0
-        })
+        available = available_contracts
 
         if not available:
             return HTMLResponse("""
@@ -337,34 +330,18 @@ def contracts(request: Request):
             </div>
             """)
 
+        # You can now pass both to template if you want to show "already bid" section
         return templates.TemplateResponse("contracts_fragment.html", {
             "request": request,
-            "contracts": available,
-            "user_id": user_id
+            "contracts": available_contracts,          # only not-yet-bid
+            "bid_contracts": bid_contracts,            # optional
+            "user_id": user_id,
+            "has_bids": len(bid_contracts) > 0
         })
 
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
-{% if contracts|length == 0 and has_bids %}
-    <div style="text-align:center; padding: 3rem; background:#f0fdf4; border-radius:16px;">
-        <h2 style="color:#065f46;">All available contracts have been bid on ✓</h2>
-        <p>You have successfully submitted bids for every contract visible to you.</p>
-    </div>
-{% elif contracts|length == 0 %}
-    <p>No contracts available at this time.</p>
-{% else %}
-    <!-- normal list of available contracts -->
-{% endif %}
 
-<!-- Optional: show already bid ones -->
-{% if bid_contracts %}
-<h3 style="margin-top:2rem; color:#1e40af;">Contracts you have already bid on</h3>
-<ul>
-{% for c in bid_contracts %}
-    <li>{{ c.project_name }} (Bid submitted)</li>
-{% endfor %}
-</ul>
-{% endif %}
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
     try:
@@ -386,7 +363,7 @@ def contract_detail(request: Request, contract_id: int):
 async def submit_bid(
     request: Request,
     contract_id: int,
-    project_id: str = Form(...),
+    company_name: str = Form(...),
     cac_number: str = Form(...),
     email: str = Form(...),
     phone: str = Form(...),
@@ -407,6 +384,11 @@ async def submit_bid(
     status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
 
     try:
+        real_contract_id = contract["Contract_number"]
+
+        if real_contract_id is None:
+            raise HTTPException(500, "Contract is missing unique identifier (Contract_number column not found)")
+
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -415,7 +397,7 @@ async def submit_bid(
                     bid_amount, equipment_list, workforce, status
                 ) VALUES (?,?,?,?,?,?,?,?,?,?)
             """, (
-                contract_id, user_id, company_name, cac_number, email, phone,
+                real_contract_id, user_id, company_name, cac_number, email, phone,
                 bid_amount, equipment_list, workforce, status_msg
             ))
             bid_id = cursor.lastrowid
@@ -519,14 +501,14 @@ def admin_dashboard(request: Request):
         enhanced = []
         for row in bids:
             try:
-                idx = row["contract_id"]
-                if 0 <= idx < len(df_bidding):
-                    contract = df_bidding.iloc[idx]
+                contract_row = df_bidding[df_bidding["Contract_number"] == row["contract_id"]]
+                if not contract_row.empty:
+                    contract = contract_row.iloc[0]
                     fair_min, fair_max = get_fair_price_range(contract)
                     is_fair = fair_min <= row["bid_amount"] <= fair_max
                     enhanced.append({
                         "bid_id": row["id"],
-                        "contract_name": contract.get("project_name", f"Contract #{idx}"),
+                        "contract_name": contract.get("Project_name", f"Contract #{row['contract_id']}"),
                         "company_name": row["company_name"],
                         "cac_number": row["cac_number"],
                         "email": row["email"],
@@ -561,6 +543,28 @@ def admin_dashboard(request: Request):
         fair_count = sum(1 for b in enhanced if b["is_fair"])
         unfair_count = total_bids - fair_count
         total_value = sum(b["bid_amount"] for b in enhanced)
+
+        body_html = ""
+        if not enhanced:
+            body_html = '<tr><td colspan="9" class="empty-state">No Bids Submitted Yet</td></tr>'
+
+        for b in enhanced:
+            row_class = "fair" if b["is_fair"] else "unfair"
+            assessment = "✅ FAIR" if b["is_fair"] else "⚠️ HIGH"
+            color_class = "color:#10b981;" if b["is_fair"] else "color:#f59e0b;"
+            body_html += f"""
+                    <tr class="{row_class}">
+                        <td><strong>#{b['bid_id']}</strong></td>
+                        <td>{b['contract_name']}</td>
+                        <td>{b['company_name']}<br><small>CAC: {b['cac_number']}</small></td>
+                        <td>{b['email']}<br><small>{b['phone']}</small></td>
+                        <td>₦{b['bid_amount']:,.2f}</td>
+                        <td>₦{b['fair_min']:,.2f} – ₦{b['fair_max']:,.2f}</td>
+                        <td style="{color_class};font-weight:bold;">{assessment}</td>
+                        <td>{b['status']}</td>
+                        <td><small>{b['timestamp']}</small></td>
+                    </tr>
+            """
 
         # Build HTML (your original styling preserved + fixes)
         return HTMLResponse(f"""
@@ -608,30 +612,7 @@ def admin_dashboard(request: Request):
                         </tr>
                     </thead>
                     <tbody>
-        """)
-
-        if not enhanced:
-            return HTMLResponse("... (empty state HTML) ...")  # add your empty state
-
-        for b in enhanced:
-            row_class = "fair" if b["is_fair"] else "unfair"
-            assessment = "✅ FAIR" if b["is_fair"] else "⚠️ HIGH"
-            color_class = "color:#10b981;" if b["is_fair"] else "color:#f59e0b;"
-            yield f"""
-                    <tr class="{row_class}">
-                        <td><strong>#{b['bid_id']}</strong></td>
-                        <td>{b['contract_name']}</td>
-                        <td>{b['company_name']}<br><small>CAC: {b['cac_number']}</small></td>
-                        <td>{b['email']}<br><small>{b['phone']}</small></td>
-                        <td>₦{b['bid_amount']:,.2f}</td>
-                        <td>₦{b['fair_min']:,.2f} – ₦{b['fair_max']:,.2f}</td>
-                        <td style="{color_class};font-weight:bold;">{assessment}</td>
-                        <td>{b['status']}</td>
-                        <td><small>{b['timestamp']}</small></td>
-                    </tr>
-            """
-
-        return HTMLResponse("""
+{body_html}
                     </tbody>
                 </table>
             </div>
@@ -650,5 +631,3 @@ async def admin_logout(response: Response):
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
-
-
