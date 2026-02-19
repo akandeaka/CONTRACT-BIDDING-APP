@@ -295,26 +295,32 @@ def contracts(request: Request):
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
             already_bid_ids = {row[0] for row in cursor.fetchall()}
 
-        # Debug prints — safe inside try
-        print("DEBUG: Already bid contract_ids from DB:", list(already_bid_ids))
-        print("DEBUG: Number of bidded contracts for this user:", len(already_bid_ids))
+        # ── DEBUG: Show what we have in DB and sheet ───────────────────────
+        print("DEBUG-CONTRACTS: Already bid contract_ids from DB:", list(already_bid_ids))
+        print("DEBUG-CONTRACTS: Number of bidded contracts for this user:", len(already_bid_ids))
 
         all_contracts = df_bidding.to_dict(orient="records")
-        print("DEBUG: First 5 Project_id from sheet:")
+        print("DEBUG-CONTRACTS: First 5 Project_id from sheet:")
         for c in all_contracts[:5]:
             pid = str(c.get("Project_id", "MISSING")).strip()
-            print(f"  - '{pid}' (type: {type(pid)})")
+            print(f"  - '{pid}' (original type: {type(c.get('Project_id'))})")
 
+        # ── Improved filtering: clean + case-insensitive + strip ────────────
         available = []
         already_bid = []
 
+        # Normalize DB IDs
         already_bid_ids_clean = {str(pid).strip().lower() for pid in already_bid_ids if pid}
 
         for c in all_contracts:
             cid_raw = c.get("Project_id")
-            cid = str(cid_raw).strip().lower() if cid_raw is not None else None
-            if cid is None or not cid:
+            if cid_raw is None:
                 continue
+
+            cid = str(cid_raw).strip().lower()
+            if not cid:
+                continue
+
             if cid in already_bid_ids_clean:
                 already_bid.append(c)
             else:
@@ -635,3 +641,4 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
