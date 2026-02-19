@@ -399,7 +399,8 @@ async def submit_bid(
         real_contract_id = str(contract.get("Project_id", "")).strip()
         if not real_contract_id:
             raise HTTPException(500, "Project_id missing or empty in contract data")
-
+        print(f"DEBUG-SUBMIT: contract_index={contract_id}")
+        print(f"DEBUG-SUBMIT: Project_id saved to DB = '{real_contract_id}'")
         print(f"DEBUG-SUBMIT: contract_index={contract_id}, Project_id from sheet = '{real_contract_id}'")  # DEBUG added here
 
         with get_db() as conn:
@@ -640,3 +641,4 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
