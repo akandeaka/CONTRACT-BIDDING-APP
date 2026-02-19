@@ -294,7 +294,7 @@ def contracts(request: Request):
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
             already_bid_ids = {row[0] for row in cursor.fetchall()}
-
+        print(f"DEBUG-LIST: user company = {company}")print(f"DEBUG-LIST: already bid IDs in DB = {list(already_bid_ids)}")print(f"DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
         # ── DEBUG: Show what we have in DB and sheet ───────────────────────
         print("DEBUG-CONTRACTS: Already bid contract_ids from DB:", list(already_bid_ids))
         print("DEBUG-CONTRACTS: Number of bidded contracts for this user:", len(already_bid_ids))
@@ -306,7 +306,7 @@ def contracts(request: Request):
             print(f"  - '{pid}' (original type: {type(c.get('Project_id'))})")
 
         # ── Improved filtering: clean + case-insensitive + strip ────────────
-        available = []
+        available = []already_bid = []already_bid_ids_clean = {str(pid).strip().lower() for pid in already_bid_ids if pid}for c in all_contracts:    cid_raw = c.get("Project_id")    if cid_raw is None:        continue    cid = str(cid_raw).strip().lower()    if not cid:        continue    if cid in already_bid_ids_clean:        already_bid.append(c)    else:        available.append(c)
         already_bid = []
 
         already_bid_ids_clean = {str(pid).strip().lower() for pid in already_bid_ids if pid}
@@ -353,6 +353,16 @@ def contracts(request: Request):
     except Exception as e:
         print(f"Contracts route error: {str(e)}")
         return HTMLResponse(f"<h1>Error loading contracts</h1><pre>{str(e)}</pre>", status_code=500)
+@app.get("/debug/bids")
+def debug_bids():
+    with get_db() as conn:
+        rows = conn.execute("SELECT * FROM bids ORDER BY timestamp DESC LIMIT 5").fetchall()
+        if not rows:
+            return {"message": "No bids in DB"}
+        result = []
+        for row in rows:
+            result.append(dict(row))
+        return result
 
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
@@ -385,7 +395,8 @@ async def submit_bid(
 ):
     try:
         user_id = get_current_user(request)
-        print(f"DEBUG-SUBMIT: POST route reached for contract_id={contract_id}, user_id={user_id}")  # DEBUG added
+        print(f"DEBUG-SUBMIT: POST route reached for contract_id={contract_id}, user_id={user_id}")
+        
 
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
@@ -401,7 +412,7 @@ async def submit_bid(
         real_contract_id = str(contract.get("Project_id", "")).strip()
         if not real_contract_id:
             raise HTTPException(500, "Project_id missing or empty in contract data")
-
+        print(f"DEBUG-SUBMIT: contract_index={contract_id}")print(f"DEBUG-SUBMIT: Project_id saved to DB = '{real_contract_id}'")
         print(f"DEBUG-SUBMIT: Project_id saved to DB = '{real_contract_id}'")  # DEBUG added
 
         with get_db() as conn:
@@ -425,8 +436,8 @@ async def submit_bid(
             ))
             bid_id = cursor.lastrowid
             conn.commit()
-
-        print("DEBUG-SUBMIT: Bid inserted successfully, returning success page")  # DEBUG added
+        print("DEBUG-SUBMIT: Bid inserted successfully, returning success page")
+        
 
         send_bid_notification(
             email, company_name, contract.get("Project_name", "Unknown"),
@@ -644,3 +655,4 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
