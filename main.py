@@ -294,20 +294,28 @@ def contracts(request: Request):
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
             already_bid_ids = {row[0] for row in cursor.fetchall()}
-print("Already bid IDs from DB:", already_bid_ids)
-print("Sample contract IDs from sheet:")
-for c in all_contracts[:3]:  # first 3 only
-    cid = str(c.get("Project_id", "MISSING")).strip()   # change "Project_id" to your column
-    print("  ", cid)
+
+        # Debug prints — safe inside try
+        print("DEBUG: Already bid contract_ids from DB:", list(already_bid_ids))
+        print("DEBUG: Number of bidded contracts for this user:", len(already_bid_ids))
+
         all_contracts = df_bidding.to_dict(orient="records")
+        print("DEBUG: First 5 Project_id from sheet:")
+        for c in all_contracts[:5]:
+            pid = str(c.get("Project_id", "MISSING")).strip()
+            print(f"  - '{pid}' (type: {type(pid)})")
+
         available = []
         already_bid = []
 
+        already_bid_ids_clean = {str(pid).strip().lower() for pid in already_bid_ids if pid}
+
         for c in all_contracts:
-            cid = str(c.get("Project_id", "")).strip()
-            if not cid:
+            cid_raw = c.get("Project_id")
+            cid = str(cid_raw).strip().lower() if cid_raw is not None else None
+            if cid is None or not cid:
                 continue
-            if cid in already_bid_ids:
+            if cid in already_bid_ids_clean:
                 already_bid.append(c)
             else:
                 available.append(c)
@@ -337,6 +345,9 @@ for c in all_contracts[:3]:  # first 3 only
         if exc.status_code == 401:
             return RedirectResponse("/login", status_code=303)
         raise
+    except Exception as e:
+        print(f"Contracts route error: {str(e)}")
+        return HTMLResponse(f"<h1>Error loading contracts</h1><pre>{str(e)}</pre>", status_code=500)
 
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
@@ -622,6 +633,7 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
 
 
 
