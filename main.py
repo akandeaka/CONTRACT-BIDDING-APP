@@ -385,6 +385,8 @@ async def submit_bid(
 ):
     try:
         user_id = get_current_user(request)
+        print(f"DEBUG-SUBMIT: POST route reached for contract_id={contract_id}, user_id={user_id}")  # DEBUG added
+
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
 
@@ -399,9 +401,8 @@ async def submit_bid(
         real_contract_id = str(contract.get("Project_id", "")).strip()
         if not real_contract_id:
             raise HTTPException(500, "Project_id missing or empty in contract data")
-        print(f"DEBUG-SUBMIT: contract_index={contract_id}")
-        print(f"DEBUG-SUBMIT: Project_id saved to DB = '{real_contract_id}'")
-        print(f"DEBUG-SUBMIT: contract_index={contract_id}, Project_id from sheet = '{real_contract_id}'")  # DEBUG added here
+
+        print(f"DEBUG-SUBMIT: Project_id saved to DB = '{real_contract_id}'")  # DEBUG added
 
         with get_db() as conn:
             cursor = conn.cursor()
@@ -424,6 +425,8 @@ async def submit_bid(
             ))
             bid_id = cursor.lastrowid
             conn.commit()
+
+        print("DEBUG-SUBMIT: Bid inserted successfully, returning success page")  # DEBUG added
 
         send_bid_notification(
             email, company_name, contract.get("Project_name", "Unknown"),
@@ -610,7 +613,7 @@ def admin_dashboard(request: Request):
                 <div class="stats-grid">
                     <div class="stat-card"><div class="stat-value">{total_bids}</div><div>Total Bids</div></div>
                     <div class="stat-card" style="border-top-color:var(--success);"><div class="stat-value">{fair_count}</div><div>Fair Bids</div></div>
-                    <div class="stat-card" style="border-top-color:var(--warning);"><div class="stat-value">{unfair_count}</div><div>Flagged Bids</div></div>
+                    <div class="stat-card" style="border-top-color:var(--warning);"><div class="stat_value">{unfair_count}</div><div>Flagged Bids</div></div>
                     <div class="stat-card"><div class="stat-value">₦{total_value:,.1f}B</div><div>Total Value</div></div>
                 </div>
 
@@ -641,4 +644,3 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
-
