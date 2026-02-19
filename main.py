@@ -294,7 +294,11 @@ def contracts(request: Request):
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
             already_bid_ids = {row[0] for row in cursor.fetchall()}
-
+print("Already bid IDs from DB:", already_bid_ids)
+print("Sample contract IDs from sheet:")
+for c in all_contracts[:3]:  # first 3 only
+    cid = str(c.get("Project_id", "MISSING")).strip()   # change "Project_id" to your column
+    print("  ", cid)
         all_contracts = df_bidding.to_dict(orient="records")
         available = []
         already_bid = []
@@ -618,6 +622,7 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
 
 
 
