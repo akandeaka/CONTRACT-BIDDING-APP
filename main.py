@@ -309,7 +309,6 @@ def contracts(request: Request):
         available = []
         already_bid = []
 
-        # Normalize DB IDs
         already_bid_ids_clean = {str(pid).strip().lower() for pid in already_bid_ids if pid}
 
         for c in all_contracts:
@@ -401,7 +400,7 @@ async def submit_bid(
         if not real_contract_id:
             raise HTTPException(500, "Project_id missing or empty in contract data")
 
-        print(f"DEBUG: Saving bid with contract_id: '{real_contract_id}'")  # ← add this
+        print(f"DEBUG-SUBMIT: contract_index={contract_id}, Project_id from sheet = '{real_contract_id}'")  # DEBUG added here
 
         with get_db() as conn:
             cursor = conn.cursor()
@@ -641,4 +640,3 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
-
