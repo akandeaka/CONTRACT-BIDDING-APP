@@ -293,12 +293,11 @@ def contracts(request: Request):
 
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
-            already_bid_ids = {row[0] for row in cursor.fetchall()}
-        print(f"DEBUG-LIST: user company = {company}")print(f"DEBUG-LIST: already bid IDs in DB = {list(already_bid_ids)}")print(f"DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
-        # ── DEBUG: Show what we have in DB and sheet ───────────────────────
-        print("DEBUG-CONTRACTS: Already bid contract_ids from DB:", list(already_bid_ids))
-        print("DEBUG-CONTRACTS: Number of bidded contracts for this user:", len(already_bid_ids))
+           already_bid_ids = {row[0] for row in cursor.fetchall()}
 
+print(f"DEBUG-LIST: user company = {company}")
+print(f"DEBUG-LIST: already bid IDs in DB = {list(already_bid_ids)}")
+print(f"DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
         all_contracts = df_bidding.to_dict(orient="records")
         print("DEBUG-CONTRACTS: First 5 Project_id from sheet:")
         for c in all_contracts[:5]:
@@ -655,5 +654,6 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
 
 
