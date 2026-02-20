@@ -42,7 +42,7 @@ TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20u
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
 MODEL_PATH = "model.pkl"
-DB_PATH = "/data/bids.db"  # Persistent on Render Disk (mount path /data)
+DB_PATH = "bids.db"  # If you added Render Disk, change to "/data/bids.db" for persistence
 
 user_sessions: Dict[str, int] = {}
 admin_sessions: Dict[str, int] = {}
@@ -227,7 +227,6 @@ async def register_user(
     password: str = Form(...)
 ):
     hashed = hashlib.sha256(password.encode()).hexdigest()
-    company_name = company_name.strip()  # Normalize
     try:
         with get_db() as conn:
             conn.execute(
@@ -296,10 +295,9 @@ def contracts(request: Request):
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
             already_bid_ids = {row[0] for row in cursor.fetchall()}
 
-        # ── DEBUG ────────────────────────────────────────────────
-        print("DEBUG-LIST: user company =", company)
-        print("DEBUG-LIST: already bid IDs in DB =", list(already_bid_ids))
-        print("DEBUG-LIST: number of bids found =", len(already_bid_ids))
+        print("DEBUG-LIST: user company = {company}")
+        print("DEBUG-LIST: already bid IDs in DB = {list(already_bid_ids)}")
+        print("DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
 
         all_contracts = df_bidding.to_dict(orient="records")
         print("DEBUG-LIST: first few Project_id from sheet:")
@@ -657,4 +655,3 @@ def debug_bids():
         for row in rows:
             result.append(dict(row))
         return result
-
