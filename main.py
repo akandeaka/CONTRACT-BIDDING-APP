@@ -42,7 +42,7 @@ TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20u
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
 MODEL_PATH = "model.pkl"
-DB_PATH = "/data/bids.db"  # Changed for Render persistent disk (must set up disk on Render dashboard)
+DB_PATH = "/data/bids.db"  # Persistent on Render Disk (mount path /data)
 
 user_sessions: Dict[str, int] = {}
 admin_sessions: Dict[str, int] = {}
@@ -657,3 +657,4 @@ def debug_bids():
         for row in rows:
             result.append(dict(row))
         return result
+
