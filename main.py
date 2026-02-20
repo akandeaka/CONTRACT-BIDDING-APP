@@ -295,9 +295,9 @@ def contracts(request: Request):
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
             already_bid_ids = {row[0] for row in cursor.fetchall()}
 
-        print("DEBUG-LIST: user company = {company}")
-        print("DEBUG-LIST: already bid IDs in DB = {list(already_bid_ids)}")
-        print("DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
+        print(f"DEBUG-LIST: user company = {company}")
+        print(f"DEBUG-LIST: already bid IDs in DB = {list(already_bid_ids)}")
+        print(f"DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
 
         all_contracts = df_bidding.to_dict(orient="records")
         print("DEBUG-LIST: first few Project_id from sheet:")
@@ -655,3 +655,4 @@ def debug_bids():
         for row in rows:
             result.append(dict(row))
         return result
+
