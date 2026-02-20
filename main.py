@@ -591,7 +591,7 @@ def admin_dashboard(request: Request):
                 </tr>
             """
 
-        return HTMLResponse(f"""
+                return HTMLResponse(f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -624,7 +624,7 @@ def admin_dashboard(request: Request):
                 <div class="stats-grid">
                     <div class="stat-card"><div class="stat-value">{total_bids}</div><div>Total Bids</div></div>
                     <div class="stat-card" style="border-top-color:var(--success);"><div class="stat-value">{fair_count}</div><div>Fair Bids</div></div>
-                    <div class="stat-card" style="border-top-color:var(--warning);"><div class="stat_value">{unfair_count}</div><div>Flagged Bids</div></div>
+                    <div class="stat-card" style="border-top-color:var(--warning);"><div class="stat-value">{unfair_count}</div><div>Flagged Bids</div></div>
                     <div class="stat-card"><div class="stat-value">₦{total_value:,.1f}B</div><div>Total Value</div></div>
                 </div>
 
@@ -655,4 +655,5 @@ async def admin_logout(response: Response):
     resp = RedirectResponse("/admin/login", status_code=303)
     resp.delete_cookie("admin_token")
     return resp
+
 
