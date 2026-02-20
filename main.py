@@ -42,7 +42,7 @@ TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20u
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
 MODEL_PATH = "model.pkl"
-DB_PATH = "bids.db"
+DB_PATH = "/data/bids.db"  # Changed for Render persistent disk (must set up disk on Render dashboard)
 
 user_sessions: Dict[str, int] = {}
 admin_sessions: Dict[str, int] = {}
@@ -227,6 +227,7 @@ async def register_user(
     password: str = Form(...)
 ):
     hashed = hashlib.sha256(password.encode()).hexdigest()
+    company_name = company_name.strip()  # Normalize
     try:
         with get_db() as conn:
             conn.execute(
@@ -289,23 +290,24 @@ def contracts(request: Request):
             if not company_row:
                 raise HTTPException(404, "User not found")
 
-            company = company_row["company_name"]
+            company = company_row["company_name"].strip()  # Normalize
 
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
-           already_bid_ids = {row[0] for row in cursor.fetchall()}
+            already_bid_ids = {row[0] for row in cursor.fetchall()}
 
-print(f"DEBUG-LIST: user company = {company}")
-print(f"DEBUG-LIST: already bid IDs in DB = {list(already_bid_ids)}")
-print(f"DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
+        # ── DEBUG ────────────────────────────────────────────────
+        print("DEBUG-LIST: user company =", company)
+        print("DEBUG-LIST: already bid IDs in DB =", list(already_bid_ids))
+        print("DEBUG-LIST: number of bids found =", len(already_bid_ids))
+
         all_contracts = df_bidding.to_dict(orient="records")
-        print("DEBUG-CONTRACTS: First 5 Project_id from sheet:")
+        print("DEBUG-LIST: first few Project_id from sheet:")
         for c in all_contracts[:5]:
             pid = str(c.get("Project_id", "MISSING")).strip()
-            print(f"  - '{pid}' (original type: {type(c.get('Project_id'))})")
+            print("  ", pid)
 
-        # ── Improved filtering: clean + case-insensitive + strip ────────────
-        available = []already_bid = []already_bid_ids_clean = {str(pid).strip().lower() for pid in already_bid_ids if pid}for c in all_contracts:    cid_raw = c.get("Project_id")    if cid_raw is None:        continue    cid = str(cid_raw).strip().lower()    if not cid:        continue    if cid in already_bid_ids_clean:        already_bid.append(c)    else:        available.append(c)
+        available = []
         already_bid = []
 
         already_bid_ids_clean = {str(pid).strip().lower() for pid in already_bid_ids if pid}
@@ -314,11 +316,9 @@ print(f"DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
             cid_raw = c.get("Project_id")
             if cid_raw is None:
                 continue
-
             cid = str(cid_raw).strip().lower()
             if not cid:
                 continue
-
             if cid in already_bid_ids_clean:
                 already_bid.append(c)
             else:
@@ -352,16 +352,6 @@ print(f"DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
     except Exception as e:
         print(f"Contracts route error: {str(e)}")
         return HTMLResponse(f"<h1>Error loading contracts</h1><pre>{str(e)}</pre>", status_code=500)
-@app.get("/debug/bids")
-def debug_bids():
-    with get_db() as conn:
-        rows = conn.execute("SELECT * FROM bids ORDER BY timestamp DESC LIMIT 5").fetchall()
-        if not rows:
-            return {"message": "No bids in DB"}
-        result = []
-        for row in rows:
-            result.append(dict(row))
-        return result
 
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
@@ -395,7 +385,6 @@ async def submit_bid(
     try:
         user_id = get_current_user(request)
         print(f"DEBUG-SUBMIT: POST route reached for contract_id={contract_id}, user_id={user_id}")
-        
 
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
@@ -411,8 +400,11 @@ async def submit_bid(
         real_contract_id = str(contract.get("Project_id", "")).strip()
         if not real_contract_id:
             raise HTTPException(500, "Project_id missing or empty in contract data")
-        print(f"DEBUG-SUBMIT: contract_index={contract_id}")print(f"DEBUG-SUBMIT: Project_id saved to DB = '{real_contract_id}'")
-        print(f"DEBUG-SUBMIT: Project_id saved to DB = '{real_contract_id}'")  # DEBUG added
+
+        print(f"DEBUG-SUBMIT: contract_index={contract_id}")
+        print(f"DEBUG-SUBMIT: Project_id saved to DB = '{real_contract_id}'")
+
+        company_name = company_name.strip()  # Normalize
 
         with get_db() as conn:
             cursor = conn.cursor()
@@ -435,8 +427,8 @@ async def submit_bid(
             ))
             bid_id = cursor.lastrowid
             conn.commit()
+
         print("DEBUG-SUBMIT: Bid inserted successfully, returning success page")
-        
 
         send_bid_notification(
             email, company_name, contract.get("Project_name", "Unknown"),
@@ -590,7 +582,7 @@ def admin_dashboard(request: Request):
                 </tr>
             """
 
-                return HTMLResponse(f"""
+        return HTMLResponse(f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -655,5 +647,13 @@ async def admin_logout(response: Response):
     resp.delete_cookie("admin_token")
     return resp
 
-
-
+@app.get("/debug/bids")
+def debug_bids():
+    with get_db() as conn:
+        rows = conn.execute("SELECT * FROM bids ORDER BY timestamp DESC LIMIT 5").fetchall()
+        if not rows:
+            return {"message": "No bids in DB"}
+        result = []
+        for row in rows:
+            result.append(dict(row))
+        return result
