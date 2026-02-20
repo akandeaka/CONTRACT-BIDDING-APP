@@ -42,7 +42,7 @@ TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20u
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
 MODEL_PATH = "model.pkl"
-DB_PATH = "bids.db"  # If you added Render Disk, change to "/data/bids.db" for persistence
+DB_PATH = "bids.db"
 
 user_sessions: Dict[str, int] = {}
 admin_sessions: Dict[str, int] = {}
@@ -289,7 +289,7 @@ def contracts(request: Request):
             if not company_row:
                 raise HTTPException(404, "User not found")
 
-            company = company_row["company_name"].strip()  # Normalize
+            company = company_row["company_name"]
 
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
@@ -382,8 +382,6 @@ async def submit_bid(
 ):
     try:
         user_id = get_current_user(request)
-        print(f"DEBUG-SUBMIT: POST route reached for contract_id={contract_id}, user_id={user_id}")
-
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
 
@@ -395,11 +393,9 @@ async def submit_bid(
     status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
 
     try:
-               real_contract_id = str(contract.get("Project_id", "")).strip()
+        real_contract_id = str(contract.get("Project_id", "")).strip()
         if not real_contract_id:
             raise HTTPException(500, "Project_id missing or empty in contract data")
-
-        company_name = company_name.strip()  # Normalize company name
 
         with get_db() as conn:
             cursor = conn.cursor()
@@ -422,19 +418,13 @@ async def submit_bid(
             ))
             bid_id = cursor.lastrowid
             conn.commit()
-            # Extra check to confirm save
-            check = conn.execute("SELECT id FROM bids WHERE id = ?", (bid_id,)).fetchone()
-            if not check:
-                raise Exception("Bid insert failed - no row found after commit")
-
-        print("DEBUG-SUBMIT: Bid inserted successfully, returning success page")
 
         send_bid_notification(
             email, company_name, contract.get("Project_name", "Unknown"),
             status_msg, bid_amount
         )
 
-                resp = HTMLResponse(f"""
+        return HTMLResponse(f"""
         <div style="max-width:750px;margin:40px auto;padding:35px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 35px rgba(16,185,131,0.2);">
             <h1 style="color:#065f46;font-size:2.1rem;margin-bottom:0.8rem;">Bid Submitted Successfully!</h1>
             <p style="font-size:1.15rem;color:#0f766e;margin:1rem 0 2rem;">Bid ID: <strong>#{bid_id}</strong></p>
@@ -446,12 +436,6 @@ async def submit_bid(
             <a href="/contracts" style="padding:14px 38px;background:#1d4ed8;color:white;border-radius:10px;text-decoration:none;font-weight:bold;">Back to Contracts</a>
         </div>
         """)
-
-        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-
-        return resp
 
     except Exception as e:
         print(f"Bid submission failed: {e}")
@@ -662,5 +646,3 @@ def debug_bids():
         for row in rows:
             result.append(dict(row))
         return result
-
-
