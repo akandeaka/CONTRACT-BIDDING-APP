@@ -652,4 +652,12 @@ def debug_bids():
         for row in rows:
             result.append(dict(row))
         return result
+@app.get("/debug/check-db")
+def debug_check_db():
+    try:
+        with get_db() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM bids").fetchone()[0]
+            return {"bids_count": count, "db_path": DB_PATH, "file_exists": os.path.exists(DB_PATH)}
+    except Exception as e:
+        return {"error": str(e)}
 
