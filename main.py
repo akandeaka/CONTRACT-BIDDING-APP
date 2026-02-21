@@ -315,6 +315,7 @@ def contracts(request: Request):
             if cid_raw is None:
                 continue
             cid = str(cid_raw).strip().lower()
+        print(f"DEBUG-FILTER: sheet cid = '{cid}', in already_bid_ids_clean? {cid in already_bid_ids_clean}")
             if not cid:
                 continue
             if cid in already_bid_ids_clean:
@@ -418,13 +419,12 @@ async def submit_bid(
             ))
             bid_id = cursor.lastrowid
             conn.commit()
-
+        print(f"DEBUG-SUBMIT: COMMIT succeeded, bid_id = {bid_id}, returning success page now")
         send_bid_notification(
             email, company_name, contract.get("Project_name", "Unknown"),
             status_msg, bid_amount
         )
-
-        return HTMLResponse(f"""
+        success_html = f"""
         <div style="max-width:750px;margin:40px auto;padding:35px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 35px rgba(16,185,131,0.2);">
             <h1 style="color:#065f46;font-size:2.1rem;margin-bottom:0.8rem;">Bid Submitted Successfully!</h1>
             <p style="font-size:1.15rem;color:#0f766e;margin:1rem 0 2rem;">Bid ID: <strong>#{bid_id}</strong></p>
@@ -435,7 +435,13 @@ async def submit_bid(
             </div>
             <a href="/contracts" style="padding:14px 38px;background:#1d4ed8;color:white;border-radius:10px;text-decoration:none;font-weight:bold;">Back to Contracts</a>
         </div>
-        """)
+        """
+
+        response = HTMLResponse(content=success_html)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 
     except Exception as e:
         print(f"Bid submission failed: {e}")
@@ -646,3 +652,4 @@ def debug_bids():
         for row in rows:
             result.append(dict(row))
         return result
+
