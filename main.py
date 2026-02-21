@@ -13,21 +13,16 @@ import hashlib
 import subprocess
 import sys
 import secrets
-from contextlib import contextmanager
-from typing import Dict
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# ────────────────────────────────────────────────
-#  CORS
-# ────────────────────────────────────────────────
+# CORS middleware (NO TRAILING SPACES - CRITICAL)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://akandeaka.github.io",
         "http://localhost:8000",
-        "http://localhost:3000",
         "https://aisec.netlify.app"
     ],
     allow_credentials=True,
@@ -35,165 +30,135 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ────────────────────────────────────────────────
-#  Configuration
-# ────────────────────────────────────────────────
+# URLs for datasets (NO TRAILING SPACES - CRITICAL)
 TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
 MODEL_PATH = "model.pkl"
-DB_PATH = "bids.db"
 
-user_sessions: Dict[str, int] = {}
-admin_sessions: Dict[str, int] = {}
-
-# ────────────────────────────────────────────────
-#  Database helpers
-# ────────────────────────────────────────────────
-@contextmanager
-def get_db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-def init_db():
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL,
-            company_name TEXT NOT NULL,
-            cac_number TEXT NOT NULL
-        )
-        """)
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bids (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            contract_id TEXT NOT NULL,
-            user_id INTEGER,
-            company_name TEXT NOT NULL,
-            cac_number TEXT NOT NULL,
-            email TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            bid_amount REAL NOT NULL,
-            equipment_list TEXT NOT NULL,
-            workforce TEXT NOT NULL,
-            status TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL
-        )
-        """)
-
-        try:
-            default_pw = hashlib.sha256("admin123".encode()).hexdigest()
-            cursor.execute(
-                "INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
-                ("admin", default_pw)
-            )
-            conn.commit()
-        except sqlite3.IntegrityError:
-            pass
-
-init_db()
-
-# ────────────────────────────────────────────────
-#  Model & Data
-# ────────────────────────────────────────────────
-def ensure_model():
+def ensure_model_and_data():
     if not os.path.exists(MODEL_PATH):
         print("Training model...")
         subprocess.run([sys.executable, "train_model.py"], check=True)
 
-ensure_model()
+ensure_model_and_data()
 
 df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)
 df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
-# ────────────────────────────────────────────────
-#  Email
-# ────────────────────────────────────────────────
-def send_bid_notification(to_email: str, company_name: str, contract_name: str, status: str, bid_amount: float):
+# Database setup (CORRECTED SCHEMA - NO FOREIGN KEY CONSTRAINT)
+conn = sqlite3.connect("bids.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    hashed_password TEXT NOT NULL,
+    company_name TEXT NOT NULL,
+    cac_number TEXT NOT NULL
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS bids (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_id INTEGER NOT NULL,  -- STORES INTEGER INDEX FROM DATAFRAME
+    user_id INTEGER,
+    company_name TEXT NOT NULL,
+    cac_number TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    bid_amount REAL NOT NULL,
+    equipment_list TEXT NOT NULL,
+    workforce TEXT NOT NULL,
+    status TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS admins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    hashed_password TEXT NOT NULL
+)
+""")
+
+try:
+    cursor.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)", 
+                   ("admin", hashlib.sha256("admin123".encode()).hexdigest()))
+    conn.commit()
+except sqlite3.IntegrityError:
+    pass
+
+conn.commit()
+
+# Email function (UPDATE CREDENTIALS BEFORE DEPLOYING)
+def send_bid_notification(email, company_name, contract_name, status, bid_amount):
     try:
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
-        EMAIL_USER = "aisec2025.notifications@gmail.com"
-        EMAIL_PASSWORD = os.getenv("EMAIL_APP_PASSWORD") or "YOUR_16_CHAR_APP_PASSWORD"
-
+        EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← REPLACE WITH YOUR GMAIL
+        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"  # ← GET FROM GOOGLE ACCOUNT SECURITY
+        
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
-        msg['To'] = to_email
+        msg['To'] = email
         msg['Subject'] = f"AISEC Bid Submission - {status}"
-
+        
         body = f"""Dear {company_name},
 
 Your bid for "{contract_name}" has been successfully submitted!
 
-Bid Amount: ₦{bid_amount:,.2f} Billion
+Bid Amount: ₦{bid_amount:.2f} Billion
 Status: {status}
 
 You can log in to your AISEC dashboard to view more details.
 
-Thank you for using AISEC.
+Thank you for using AISEC - AI for Secure and Efficient Contracting.
 
 Best regards,
 AISEC Team"""
+        
         msg.attach(MIMEText(body, 'plain'))
-
+        
         with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
             server.starttls()
             server.login(EMAIL_USER, EMAIL_PASSWORD)
             server.send_message(msg)
-
-        print(f"Email sent to {to_email}")
+        
+        print(f"✓ Email sent to {email}")
         return True
     except Exception as e:
-        print(f"Email failed: {e}")
+        print(f"✗ Email FAILED: {str(e)}")
         return False
 
-# ────────────────────────────────────────────────
-#  Sessions
-# ────────────────────────────────────────────────
-def create_user_session(user_id: int) -> str:
-    token = secrets.token_urlsafe(40)
-    user_sessions[token] = user_id
+sessions = {}
+
+def create_session(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    sessions[token] = user_id
     return token
 
-def create_admin_session(admin_id: int) -> str:
-    token = secrets.token_urlsafe(40)
-    admin_sessions[token] = admin_id
-    return token
-
-def get_current_user(request: Request) -> int:
+def get_current_user(request: Request):
     token = request.cookies.get("session_token")
-    if not token or token not in user_sessions:
-        raise HTTPException(401, "Not authenticated")
-    return user_sessions[token]
+    if not token or token not in sessions:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return sessions[token]
 
-def get_current_admin(request: Request) -> int:
+def get_admin_user(request: Request):
     token = request.cookies.get("admin_token")
-    if not token or token not in admin_sessions:
-        raise HTTPException(401, "Admin not authenticated")
-    return admin_sessions[token]
+    if not token or token not in sessions:
+        raise HTTPException(status_code=401, detail="Admin not authenticated")
+    return sessions[token]
 
-# ────────────────────────────────────────────────
-#  Helpers
-# ────────────────────────────────────────────────
-def adjust_for_inflation(base_price: float, inflation_rate=0.12, years=2) -> float:
+def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
 
-def get_fair_price_range(contract_row) -> tuple[float, float]:
+# CRITICAL FIX: REMOVED ALL TRAILING SPACES IN FEATURE COLUMNS
+def get_fair_price_range(contract_row):
     feature_columns = [
         "award_year", "award_month", "primary_state", "geopolitical_zone",
         "latitude_start", "longitude_start", "estimated_length_km",
@@ -201,48 +166,32 @@ def get_fair_price_range(contract_row) -> tuple[float, float]:
         "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
         "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
         "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
-    ]
+    ]  # ← NO TRAILING SPACES (CRITICAL FIX)
     features = contract_row[feature_columns]
-    features_df = pd.DataFrame([features], columns=feature_columns)
-    base = model.predict(features_df)[0]
-    adjusted = adjust_for_inflation(base)
+    features_df = pd.DataFrame([features.values], columns=features.index)
+    base_price = model.predict(features_df)[0]
+    adjusted = adjust_for_inflation(base_price)
     return adjusted * 0.9, adjusted * 1.1
 
-# ────────────────────────────────────────────────
-#  Routes
-# ────────────────────────────────────────────────
+# ===== CORE ROUTES =====
 @app.get("/", response_class=HTMLResponse)
-async def home():
-    return RedirectResponse("/contracts")
+async def home(request: Request):
+    return RedirectResponse(url="/contracts")
 
 @app.get("/register", response_class=HTMLResponse)
 def register_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
 @app.post("/register", response_class=HTMLResponse)
-async def register_user(
-    company_name: str = Form(...),
-    cac_number: str = Form(...),
-    email: str = Form(...),
-    password: str = Form(...)
-):
-    hashed = hashlib.sha256(password.encode()).hexdigest()
+async def register_user(company_name: str = Form(...), cac_number: str = Form(...), email: str = Form(...), password: str = Form(...)):
     try:
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?,?,?,?)",
-                (company_name, cac_number, email, hashed)
-            )
-            conn.commit()
-        return HTMLResponse(content="""
-        <h2 style="color:green;text-align:center">Registration successful!</h2>
-        <p style="text-align:center"><a href="/login">Login here</a></p>
-        """)
+        hashed = hashlib.sha256(password.encode()).hexdigest()
+        cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
+                       (company_name, cac_number, email, hashed))
+        conn.commit()
+        return "<h2 style='color:green;text-align:center;'>✅ Registration successful!</h2><p style='text-align:center;'><a href='/login'>Login here</a></p>"
     except sqlite3.IntegrityError:
-        return HTMLResponse(content="""
-        <h2 style="color:red;text-align:center">Email already registered</h2>
-        <p style="text-align:center"><a href="/login">Login here</a></p>
-        """, status_code=400)
+        return "<h2 style='color:red;text-align:center;'>❌ Email already registered</h2><p style='text-align:center;'><a href='/login'>Login here</a></p>"
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
@@ -251,123 +200,90 @@ def login_page(request: Request):
 @app.post("/login", response_class=HTMLResponse)
 async def login_user(response: Response, email: str = Form(...), password: str = Form(...)):
     hashed = hashlib.sha256(password.encode()).hexdigest()
-    with get_db() as conn:
-        user = conn.execute(
-            "SELECT id FROM users WHERE email = ? AND hashed_password = ?",
-            (email, hashed)
-        ).fetchone()
-
+    cursor.execute("SELECT id FROM users WHERE email = ? AND hashed_password = ?", (email, hashed))
+    user = cursor.fetchone()
     if user:
-        token = create_user_session(user["id"])
-        resp = RedirectResponse("/contracts", status_code=303)
-        resp.set_cookie(key="session_token", value=token, httponly=True, max_age=86400)
+        session_token = create_session(user[0])
+        resp = RedirectResponse(url="/contracts", status_code=303)
+        resp.set_cookie(key="session_token", value=session_token, httponly=True, max_age=3600)
         return resp
-
-    return HTMLResponse(content="""
-    <h2 style="color:red;text-align:center">Invalid credentials</h2>
-    <p style="text-align:center"><a href="/login">Try again</a></p>
-    """, status_code=401)
+    else:
+        return "<h2 style='color:red;text-align:center;'>❌ Invalid credentials</h2><p style='text-align:center;'><a href='/login'>Try again</a></p>"
 
 @app.get("/logout", response_class=HTMLResponse)
 async def logout(response: Response):
-    resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie("session_token")
-    return resp
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("session_token")
+    return response
 
-# ────────────────────────────────────────────────
-#  Contracts list + detail
-# ────────────────────────────────────────────────
+# ===== CONTRACTS WITH FILTERING (CRITICAL FIX) =====
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
     try:
         user_id = get_current_user(request)
-        with get_db() as conn:
-            company_row = conn.execute(
-                "SELECT company_name FROM users WHERE id = ?",
-                (user_id,)
-            ).fetchone()
-            if not company_row:
-                raise HTTPException(404, "User not found")
-
-            company = company_row["company_name"]
-
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT contract_id FROM bids WHERE company_name = ?", (company,))
-            already_bid_ids = {row[0] for row in cursor.fetchall()}
-
-        print(f"DEBUG-LIST: user company = {company}")
-        print(f"DEBUG-LIST: already bid IDs in DB = {list(already_bid_ids)}")
-        print(f"DEBUG-LIST: number of bids found = {len(already_bid_ids)}")
-
+        cursor.execute("SELECT company_name FROM users WHERE id = ?", (user_id,))
+        user_data = cursor.fetchone()
+        if not user_data:
+            return RedirectResponse(url="/login", status_code=303)
+        
+        current_company = user_data[0]
+        # CRITICAL FIX: Query uses INTEGER contract_id (matches dataframe index)
+        cursor.execute("SELECT contract_id FROM bids WHERE company_name = ?", (current_company,))
+        existing_bids = cursor.fetchall()
+        bid_contract_ids = [bid[0] for bid in existing_bids]  # List of INTEGER indices
+        
         all_contracts = df_bidding.to_dict(orient="records")
-        print("DEBUG-LIST: first few Project_id from sheet:")
-        for c in all_contracts[:5]:
-            pid = str(c.get("Project_id", "MISSING")).strip()
-            print("  ", pid)
-
-        available = []
-        already_bid = []
-
-        already_bid_ids_clean = {str(pid).strip().lower() for pid in already_bid_ids if pid}
-
-        for c in all_contracts:
-            cid_raw = c.get("Project_id")
-            if cid_raw is None:
-                continue
-            cid = str(cid_raw).strip().lower()
-            if not cid:
-                continue
-            if cid in already_bid_ids_clean:
-                already_bid.append(c)
-            else:
-                available.append(c)
-
-        if not available:
-            return HTMLResponse(content="""
-            <div style="max-width:700px; margin:80px auto; padding:40px; background:white; border-radius:16px; text-align:center; box-shadow:0 8px 30px #0002;">
-                <div style="font-size:80px">🏆</div>
-                <h2>All Contracts Have Been Bid On!</h2>
-                <p style="font-size:18px; color:#555; margin:20px 0;">
-                    Your company has submitted bids for every available contract.<br>
-                    Administrators will review submissions shortly.
+        # CRITICAL FIX: Filter using INTEGER index comparison
+        available_contracts = [
+            contract for idx, contract in enumerate(all_contracts) 
+            if idx not in bid_contract_ids
+        ]
+        
+        if not available_contracts:
+            return """
+            <div style='max-width:700px;margin:50px auto;background:white;border-radius:16px;padding:40px;text-align:center;box-shadow:0 5px 20px rgba(0,0,0,0.1)'>
+                <div style='font-size:64px;margin-bottom:20px'>✅</div>
+                <h2 style='color:#1e40af;margin-bottom:15px'>All Contracts Bid Successfully!</h2>
+                <p style='color:#475569;font-size:18px;margin-bottom:25px'>
+                    Your company has submitted bids for all available contracts.<br>
+                    Administrators will review your submissions shortly.
                 </p>
-                <a href="/logout" style="padding:14px 40px; background:#e11d48; color:white; border-radius:10px; text-decoration:none; font-weight:bold;">Logout</a>
+                <div style='background:#f0fdf4;border-radius:12px;padding:20px;margin:25px 0;text-align:left'>
+                    <p style='font-weight:600;color:#065f46;margin-bottom:10px'>📌 What's Next:</p>
+                    <ul style='color:#065f46;line-height:1.8;text-align:left;padding-left:20px'>
+                        <li>Monitor your email for status updates</li>
+                        <li>Admins may contact you for clarification</li>
+                        <li>Check admin dashboard for AI assessment results</li>
+                    </ul>
+                </div>
+                <a href='/logout' style='display:inline-block;padding:12px 30px;background:#ef4444;color:white;text-decoration:none;border-radius:8px;font-weight:600'>
+                    Logout
+                </a>
             </div>
-            """)
-
+            """
+        
         return templates.TemplateResponse("contracts_fragment.html", {
-            "request": request,
-            "contracts": available,
-            "bid_contracts": already_bid,
-            "user_id": user_id,
-            "has_bids": bool(already_bid)
+            "request": request, 
+            "contracts": available_contracts,
+            "user_id": user_id
         })
-
-    except HTTPException as exc:
-        if exc.status_code == 401:
-            return RedirectResponse("/login", status_code=303)
-        raise
-    except Exception as e:
-        print(f"Contracts route error: {str(e)}")
-        return HTMLResponse(f"<h1>Error loading contracts</h1><pre>{str(e)}</pre>", status_code=500)
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
 
 @app.get("/contracts/{contract_id}", response_class=HTMLResponse)
 def contract_detail(request: Request, contract_id: int):
     try:
-        get_current_user(request)
-        if contract_id < 0 or contract_id >= len(df_bidding):
-            raise HTTPException(404, "Contract not found")
-        contract = df_bidding.iloc[contract_id].to_dict()
+        user_id = get_current_user(request)
+        row = df_bidding.iloc[contract_id]
         return templates.TemplateResponse("contract_detail.html", {
-            "request": request,
-            "contract": contract,
-            "contract_index": contract_id
+            "request": request, 
+            "contract": row.to_dict(),
+            "user_id": user_id
         })
-    except HTTPException as exc:
-        if exc.status_code == 401:
-            return RedirectResponse("/login", status_code=303)
-        return HTMLResponse(f"<h2>Error {exc.status_code}</h2><p>{exc.detail}</p>", status_code=exc.status_code)
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
 
+# ===== BID SUBMISSION WITH VISIBLE SUCCESS & PERSISTENCE (CRITICAL FIX) =====
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
     request: Request,
@@ -378,280 +294,375 @@ async def submit_bid(
     phone: str = Form(...),
     bid_amount: float = Form(...),
     equipment_list: str = Form(...),
-    workforce: str = Form(...)
+    workforce: str = Form(...),
 ):
     try:
-        user_id = get_current_user(request)
-    except HTTPException:
-        return RedirectResponse("/login", status_code=303)
+        try:
+            user_id = get_current_user(request)
+        except:
+            user_id = None
+        
+        bidding_contract = df_bidding.iloc[contract_id]
+        fair_min, fair_max = get_fair_price_range(bidding_contract)
+        status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
 
-    if contract_id < 0 or contract_id >= len(df_bidding):
-        return HTMLResponse("<h2>Invalid contract</h2>", status_code=400)
+        # CRITICAL FIX: Save bid with EXPLICIT COMMIT (persists to disk)
+        cursor.execute("""
+        INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
+        conn.commit()  # ← THIS ENSURES BID IS SAVED PERMANENTLY
+        
+        bid_id = cursor.lastrowid
+        print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount:.2f}B")
 
-    contract = df_bidding.iloc[contract_id]
-    fair_min, fair_max = get_fair_price_range(contract)
-    status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
+        # Send email notification (non-blocking)
+        try:
+            send_bid_notification(email, company_name, bidding_contract['project_name'], status_msg, bid_amount)
+            email_status = "<p style='color:#10b981;font-weight:600;margin:15px 0;font-size:18px'>📧 Email confirmation sent!</p>"
+        except Exception as e:
+            print(f"⚠️ Email failed (bid saved): {str(e)}")
+            email_status = "<p style='color:#f59e0b;font-weight:600;margin:15px 0;font-size:18px'>⚠️ Bid saved (email failed)</p>"
 
-    try:
-        real_contract_id = str(contract.get("Project_id", "")).strip()
-        if not real_contract_id:
-            raise HTTPException(500, "Project_id missing or empty in contract data")
-
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO bids (
-                    contract_id, user_id, company_name, cac_number, email, phone,
-                    bid_amount, equipment_list, workforce, status
-                ) VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, (
-                real_contract_id,
-                user_id,
-                company_name,
-                cac_number,
-                email,
-                phone,
-                bid_amount,
-                equipment_list,
-                workforce,
-                status_msg
-            ))
-            bid_id = cursor.lastrowid
-            conn.commit()
-
-        send_bid_notification(
-            email, company_name, contract.get("Project_name", "Unknown"),
-            status_msg, bid_amount
-        )
-
-        return HTMLResponse(f"""
-        <div style="max-width:750px;margin:40px auto;padding:35px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 35px rgba(16,185,131,0.2);">
-            <h1 style="color:#065f46;font-size:2.1rem;margin-bottom:0.8rem;">Bid Submitted Successfully!</h1>
-            <p style="font-size:1.15rem;color:#0f766e;margin:1rem 0 2rem;">Bid ID: <strong>#{bid_id}</strong></p>
-            <div style="background:white;padding:1.5rem;border-radius:12px;margin:1.5rem 0;text-align:left;">
-                <p><strong>Contract:</strong> {contract.get('Project_name', '—')}</p>
-                <p><strong>Amount:</strong> ₦{bid_amount:,.2f} Billion</p>
-                <p><strong>AI Status:</strong> <span style="color:{'#10b981' if 'Approved' in status_msg else '#ef4444'};">{status_msg}</span></p>
+        # VISIBLE SUCCESS MESSAGE (USER WILL SEE THIS IMMEDIATELY)
+        return f"""
+        <div style='max-width:750px;margin:30px auto;background:linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);border:3px solid #10b981;border-radius:20px;padding:30px;text-align:center;box-shadow:0 10px 30px rgba(16, 185, 129, 0.25);animation:fadeIn 0.6s'>
+            <style>@keyframes fadeIn {{ from {{ opacity:0; transform: translateY(20px); }} to {{ opacity:1; transform: translateY(0); }} }}</style>
+            <div style='width:70px;height:70px;background:#10b981;border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;color:white;font-size:32px'>✓</div>
+            <h1 style='color:#065f46;margin:0 0 12px;font-size:28px'>🎉 BID SUBMITTED SUCCESSFULLY!</h1>
+            <p style='color:#0f766e;font-size:18px;margin-bottom:20px'>Your bid has been recorded in the AISEC system</p>
+            
+            <div style='background:white;padding:20px;border-radius:16px;margin:20px 0;box-shadow:0 4px 12px rgba(0,0,0,0.08);text-align:left'>
+                <p style='margin:10px 0'><strong>📝 Contract:</strong> <span style='color:#1e40af;font-weight:600'>{bidding_contract['project_name']}</span></p>
+                <p style='margin:10px 0'><strong>🏢 Company:</strong> {company_name}</p>
+                <p style='margin:10px 0'><strong>🆔 CAC Number:</strong> {cac_number}</p>
+                <p style='margin:10px 0'><strong>💰 Bid Amount:</strong> <span style='font-size:20px;font-weight:bold;color:#065f46'>₦{bid_amount:.2f} Billion</span></p>
+                <p style='margin:10px 0;font-weight:bold;color:{'#10b981' if 'Approved' in status_msg else '#ef4444'};font-size:17px'>
+                    <strong>📊 AI Assessment:</strong> {status_msg}
+                </p>
+                <div style='background:#f0fdf4;border-left:3px solid #10b981;padding:10px;margin-top:15px;font-size:15px;color:#065f46'>
+                    <strong>🔖 Bid ID:</strong> {bid_id} • <strong>⏰ Submitted:</strong> {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}
+                </div>
             </div>
-            <a href="/contracts" style="padding:14px 38px;background:#1d4ed8;color:white;border-radius:10px;text-decoration:none;font-weight:bold;">Back to Contracts</a>
+            
+            {email_status}
+            
+            <div style='background:#dbeafe;padding:15px;border-radius:12px;margin:20px 0;text-align:left'>
+                <p style='margin:8px 0;color:#1e40af;font-weight:600;font-size:16px'>✅ Next Steps:</p>
+                <ul style='text-align:left;margin-left:20px;color:#1e40af;line-height:1.7;font-size:15px'>
+                    <li>Your bid is <strong>visible to administrators</strong> in the AISEC dashboard</li>
+                    <li>AI has compared your bid against fair market pricing</li>
+                    <li>Admins may contact you using the email/phone provided</li>
+                    <li>This contract will <strong>no longer appear</strong> in your available contracts list</li>
+                </ul>
+            </div>
+            
+            <a href='/contracts' style='display:inline-block;margin-top:15px;padding:14px 40px;background:linear-gradient(135deg, #1e40af, #1e3a8a);color:white;text-decoration:none;border-radius:12px;font-weight:700;font-size:17px;box-shadow:0 4px 12px rgba(30, 64, 175, 0.3);transition:all 0.3s'>
+                📋 View Remaining Contracts
+            </a>
         </div>
-        """)
-
+        """
+        
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
     except Exception as e:
-        print(f"Bid submission failed: {e}")
-        return HTMLResponse(f"""
-        <div style="max-width:600px;margin:60px auto;padding:40px;background:#fef2f2;border:3px solid #ef4444;border-radius:16px;text-align:center;">
-            <h1 style="color:#991b1b">Submission Failed</h1>
-            <p style="color:#991b1b;margin:1.5rem 0;">{str(e)[:180]}</p>
-            <a href="/contracts" style="padding:12px 30px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;">Try Again</a>
+        error_detail = str(e)
+        print(f"✗✗✗ BID SUBMISSION FAILED: {error_detail}")
+        if "no such table" in error_detail:
+            error_msg = "Database error. Contact administrator."
+        elif "FOREIGN KEY" in error_detail:
+            error_msg = "Session expired. Please login again."
+        else:
+            error_msg = "Submission failed. Please try again."
+        
+        return f"""
+        <div style='max-width:650px;margin:30px auto;background:#fef2f2;border:3px solid #ef4444;border-radius:20px;padding:30px;text-align:center;box-shadow:0 10px 30px rgba(239, 68, 68, 0.25)'>
+            <div style='width:70px;height:70px;background:#ef4444;border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;color:white;font-size:32px'>!</div>
+            <h1 style='color:#991b1b;margin:0 0 12px;font-size:28px'>❌ SUBMISSION FAILED</h1>
+            <p style='color:#991b1b;font-size:18px;margin-bottom:20px'>{error_msg}</p>
+            <div style='background:#fee2e2;border-radius:10px;padding:15px;margin:15px 0;font-family:monospace;font-size:14px;color:#b91c1c;max-height:100px;overflow:auto;text-align:left'>
+                {error_detail[:150]}
+            </div>
+            <a href='/contracts' style='display:inline-block;margin-top:15px;padding:14px 35px;background:#1e40af;color:white;text-decoration:none;border-radius:10px;font-weight:600;font-size:16px'>
+                ⇦ Go Back & Retry
+            </a>
         </div>
-        """, status_code=500)
+        """
 
-# ────────────────────────────────────────────────
-#  Admin
-# ────────────────────────────────────────────────
+# ===== ADMIN ROUTES (SINGLE DEFINITION) =====
 @app.get("/admin/login", response_class=HTMLResponse)
-def admin_login_page():
-    return HTMLResponse("""
+def admin_login_page(request: Request):
+    return """
     <!DOCTYPE html>
     <html>
-    <head><title>Admin Login</title></head>
-    <body style="margin:0;font-family:sans-serif;background:#f0f9ff;height:100vh;display:grid;place-items:center;">
-        <div style="background:white;padding:3rem 2.5rem;border-radius:16px;box-shadow:0 10px 40px #00000022;width:380px;text-align:center;">
-            <h2 style="color:#1e40af;margin-bottom:2rem;">AISEC Admin Login</h2>
-            <form method="POST">
-                <input name="username" placeholder="Username" required style="width:100%;padding:12px;margin:10px 0;border:1px solid #ddd;border-radius:8px;">
-                <input name="password" type="password" placeholder="Password" required style="width:100%;padding:12px;margin:10px 0;border:1px solid #ddd;border-radius:8px;">
-                <button type="submit" style="width:100%;padding:14px;background:#2563eb;color:white;border:none;border-radius:8px;font-weight:bold;margin-top:1rem;cursor:pointer;">Login</button>
+    <head><title>Admin Login - AISEC</title></head>
+    <body style="font-family:Arial,sans-serif;background:#f0f9ff;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0">
+        <div style="background:white;padding:40px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.1);width:100%;max-width:400px;text-align:center">
+            <div style="font-size:48px;margin-bottom:20px">🛡️</div>
+            <h2 style="color:#1e40af;margin-bottom:30px">AISEC Admin Portal</h2>
+            <form method="POST" style="display:flex;flex-direction:column;gap:15px">
+                <input type="text" name="username" placeholder="Username" required style="padding:12px;border:1px solid #ddd;border-radius:8px;font-size:16px">
+                <input type="password" name="password" placeholder="Password" required style="padding:12px;border:1px solid #ddd;border-radius:8px;font-size:16px">
+                <button type="submit" style="padding:12px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer">Login to Dashboard</button>
             </form>
         </div>
     </body>
     </html>
-    """)
-
-@app.get("/debug/admin-check")
-def debug_admin_check():
-    with get_db() as conn:
-        row = conn.execute("SELECT username, hashed_password FROM admins WHERE username = 'admin'").fetchone()
-        if row:
-            return {
-                "exists": True,
-                "username_in_db": row["username"],
-                "hashed_password_in_db": row["hashed_password"][:20] + "..."
-            }
-        return {"exists": False}
+    """
 
 @app.post("/admin/login", response_class=HTMLResponse)
-async def admin_login(response: Response, username: str = Form(...), password: str = Form(...)):
+async def admin_login(username: str = Form(...), password: str = Form(...)):
     hashed = hashlib.sha256(password.encode()).hexdigest()
-    with get_db() as conn:
-        admin = conn.execute(
-            "SELECT id FROM admins WHERE username = ? AND hashed_password = ?",
-            (username, hashed)
-        ).fetchone()
-
+    cursor.execute("SELECT id FROM admins WHERE username = ? AND hashed_password = ?", (username, hashed))
+    admin = cursor.fetchone()
     if admin:
-        token = create_admin_session(admin["id"])
-        resp = RedirectResponse("/admin/dashboard", status_code=303)
-        resp.set_cookie("admin_token", token, httponly=True, max_age=86400)
+        session_token = create_session(admin[0])
+        resp = RedirectResponse(url="/admin/dashboard", status_code=303)
+        resp.set_cookie(key="admin_token", value=session_token, httponly=True, max_age=3600)
         return resp
-
-    return HTMLResponse("""
-    <h2 style="color:red;text-align:center;margin-top:120px;">Invalid admin credentials</h2>
-    <p style="text-align:center"><a href="/admin/login">Back</a></p>
-    """, status_code=401)
+    else:
+        return "<h2 style='color:red;text-align:center'>❌ Invalid credentials</h2><p style='text-align:center'><a href='/admin/login' style='color:#2563eb;text-decoration:none'>Try again</a></p>"
 
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     try:
-        get_current_admin(request)
-
-        with get_db() as conn:
-            bids = conn.execute("""
-                SELECT id, contract_id, company_name, cac_number, email, phone,
-                       bid_amount, equipment_list, workforce, status, timestamp
-                FROM bids
-                ORDER BY timestamp DESC
-            """).fetchall()
-
-        enhanced = []
-        for row in bids:
+        admin_id = get_admin_user(request)
+        
+        # CORRECT QUERY: NO JOIN, EXPLICIT COLUMNS, INTEGER contract_id
+        cursor.execute("""
+            SELECT id, contract_id, company_name, cac_number, email, phone, 
+                   bid_amount, equipment_list, workforce, status, timestamp
+            FROM bids 
+            ORDER BY timestamp DESC
+        """)
+        bids = cursor.fetchall()
+        total_bids = len(bids)
+        print(f"✓✓✓ ADMIN DASHBOARD: Loaded {total_bids} bids from database")
+        
+        # Process bids with AI comparison (using INTEGER contract_id)
+        enhanced_bids = []
+        for bid in bids:
             try:
-                matching = df_bidding[df_bidding["Project_id"].astype(str).str.strip() == str(row["contract_id"]).strip()]
-                if not matching.empty:
-                    contract = matching.iloc[0]
-                    fair_min, fair_max = get_fair_price_range(contract)
-                    is_fair = fair_min <= row["bid_amount"] <= fair_max
-                    contract_name = contract.get("Project_name", f"Contract {row['contract_id']}")
-                else:
-                    contract_name = f"Unknown ({row['contract_id']})"
-                    fair_min = fair_max = 0
-                    is_fair = False
-
-                enhanced.append({
-                    "bid_id": row["id"],
-                    "contract_name": contract_name,
-                    "company_name": row["company_name"] or "—",
-                    "cac_number": row["cac_number"] or "—",
-                    "email": row["email"] or "—",
-                    "phone": row["phone"] or "—",
-                    "bid_amount": row["bid_amount"],
-                    "fair_min": fair_min,
-                    "fair_max": fair_max,
-                    "is_fair": is_fair,
-                    "status": row["status"],
-                    "timestamp": row["timestamp"]
+                # CRITICAL FIX: Use INTEGER contract_id to index dataframe
+                contract_row = df_bidding.iloc[bid[1]]  # bid[1] = contract_id (INTEGER)
+                fair_min, fair_max = get_fair_price_range(contract_row)
+                is_fair = fair_min <= bid[6] <= fair_max  # bid[6] = bid_amount
+                
+                enhanced_bids.append({
+                    'contract_name': contract_row['project_name'],
+                    'company_name': bid[2] or 'N/A',
+                    'cac_number': bid[3] or 'N/A',
+                    'bid_amount': bid[6],
+                    'fair_min': fair_min,
+                    'fair_max': fair_max,
+                    'is_fair': is_fair,
+                    'status': bid[9],
+                    'timestamp': bid[10],
+                    'email': bid[4],
+                    'phone': bid[5],
+                    'bid_id': bid[0]
                 })
             except Exception as e:
-                print(f"Error processing bid {row['id']}: {e}")
-                continue
-
-        total_bids = len(enhanced)
-        fair_count = sum(1 for b in enhanced if b["is_fair"])
-        unfair_count = total_bids - fair_count
-        total_value = sum(b["bid_amount"] for b in enhanced) if enhanced else 0.0
-
-        body_html = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:#64748b;">No Bids Submitted Yet</td></tr>' if not enhanced else ""
-
-        for b in enhanced:
-            row_class = "fair" if b["is_fair"] else "unfair"
-            assessment = "✅ FAIR" if b["is_fair"] else "⚠️ HIGH"
-            color_class = "color:#10b981;" if b["is_fair"] else "color:#f59e0b;"
-            body_html += f"""
-                <tr class="{row_class}">
-                    <td><strong>#{b['bid_id']}</strong></td>
-                    <td>{b['contract_name']}</td>
-                    <td>{b['company_name']}<br><small>CAC: {b['cac_number']}</small></td>
-                    <td>{b['email']}<br><small>{b['phone']}</small></td>
-                    <td>₦{b['bid_amount']:,.2f}</td>
-                    <td>₦{b['fair_min']:,.2f} – ₦{b['fair_max']:,.2f}</td>
-                    <td style="{color_class}font-weight:bold;">{assessment}</td>
-                    <td>{b['status']}</td>
-                    <td><small>{b['timestamp']}</small></td>
-                </tr>
-            """
-
-        return HTMLResponse(f"""
+                print(f"⚠️ Error processing bid ID {bid[0]}: {str(e)}")
+                enhanced_bids.append({
+                    'contract_name': f'Contract ID {bid[1]} (Error)',
+                    'company_name': bid[2] or 'N/A',
+                    'cac_number': bid[3] or 'N/A',
+                    'bid_amount': bid[6],
+                    'fair_min': 0,
+                    'fair_max': 0,
+                    'is_fair': False,
+                    'status': bid[9],
+                    'timestamp': bid[10],
+                    'email': bid[4],
+                    'phone': bid[5],
+                    'bid_id': bid[0]
+                })
+        
+        # Build dashboard HTML
+        admin_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>AISEC Admin Dashboard</title>
             <style>
-                :root {{ --primary:#2563eb; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; }}
-                body {{ font-family:Segoe UI,sans-serif; background:#f8fafc; margin:0; }}
-                .header {{ background:linear-gradient(135deg,#1e40af,#0c4a6e); color:white; padding:1.2rem 3rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; box-shadow:0 4px 12px #0003; }}
-                .container {{ max-width:1800px; margin:2rem auto; padding:0 1.5rem; }}
-                .stats-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1.5rem; margin-bottom:2.5rem; }}
-                .stat-card {{ background:white; border-radius:16px; padding:1.8rem; text-align:center; box-shadow:0 6px 20px #00000011; border-top:5px solid var(--primary); }}
-                .stat-value {{ font-size:2.8rem; font-weight:800; background:linear-gradient(90deg,var(--primary),#0ea5e9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }}
-                table {{ width:100%; border-collapse:collapse; background:white; border-radius:16px; overflow:hidden; box-shadow:0 10px 35px #0000001a; }}
-                th {{ background:#f1f5f9; padding:1.1rem; text-align:left; font-weight:700; color:#1e40af; position:sticky; top:70px; z-index:10; }}
-                td {{ padding:1rem; border-bottom:1px solid #e2e8f0; }}
-                tr:hover {{ background:#f8fafc; }}
-                .fair {{ background:linear-gradient(to right,#f0fdf4 96%,#bbf7d0); }}
-                .unfair {{ background:linear-gradient(to right,#fffbeb 96%,#fde68a); }}
-                .logout-btn {{ background:#ef4444; color:white; padding:0.7rem 1.6rem; border-radius:10px; text-decoration:none; font-weight:bold; }}
+                :root {{ --primary: #2563eb; --success: #10b981; --warning: #f59e0b; --danger: #ef4444; }}
+                * {{ margin:0; padding:0; box-sizing:border-box; }}
+                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f9ff; }}
+                .header {{ background: linear-gradient(135deg, #1e40af, #0c4a6e); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100; }}
+                .container {{ max-width: 1800px; margin: 30px auto; padding: 0 20px; }}
+                .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+                .stat-card {{ background: white; border-radius: 20px; padding: 25px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); text-align: center; border-top: 5px solid var(--primary); transition: transform 0.3s; }}
+                .stat-card:hover {{ transform: translateY(-5px); }}
+                .stat-value {{ font-size: 42px; font-weight: 800; margin: 10px 0; background: linear-gradient(135deg, var(--primary), #0ea5e9); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+                .stat-label {{ color: #334155; font-size: 16px; font-weight: 600; }}
+                .table-container {{ background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.12); margin-top: 10px; }}
+                table {{ width: 100%; border-collapse: collapse; }}
+                th {{ background: linear-gradient(135deg, #f8fafc, #e2e8f0); padding: 18px 15px; text-align: left; font-weight: 800; color: #1e40af; font-size: 15px; position: sticky; top: 70px; z-index: 90; }}
+                td {{ padding: 16px 15px; border-bottom: 1px solid #f1f5f9; font-size: 15px; }}
+                tr:hover {{ background: #f8fafc; }}
+                .fair {{ background: linear-gradient(to right, #f0fdf4 95%, #bbf7d0 5%); border-left: 5px solid var(--success); }}
+                .unfair {{ background: linear-gradient(to right, #fff7ed 95%, #fcd34d 5%); border-left: 5px solid var(--warning); }}
+                .status-approved {{ color: var(--success); font-weight: 700; font-size: 16px; }}
+                .status-rejected {{ color: var(--danger); font-weight: 700; font-size: 16px; }}
+                .range-good {{ color: var(--success); font-weight: 700; }}
+                .range-bad {{ color: var(--danger); font-weight: 700; }}
+                .logout-btn {{ background: linear-gradient(135deg, var(--danger), #b91c1c); color: white; padding: 12px 28px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4); transition: all 0.3s; }}
+                .logout-btn:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6); }}
+                .logo {{ font-size: 28px; font-weight: 800; display: flex; align-items: center; gap: 12px; }}
+                .highlight {{ background: #dbeafe; padding: 3px 10px; border-radius: 8px; font-weight: 700; }}
+                .empty-state {{ text-align: center; padding: 60px 20px; color: #64748b; }}
+                .empty-state i {{ font-size: 64px; margin-bottom: 20px; opacity: 0.3; }}
+                .empty-state h3 {{ font-size: 28px; margin: 15px 0; color: #334155; }}
+                .timestamp {{ color: #475569; font-family: monospace; font-size: 14px; }}
             </style>
         </head>
         <body>
             <div class="header">
-                <div style="font-size:1.6rem;font-weight:800;">🛡️ AISEC Admin</div>
-                <a href="/admin/logout" class="logout-btn">Logout</a>
+                <div class="logo">🛡️ AISEC ADMIN DASHBOARD</div>
+                <a href="/admin/logout" class="logout-btn">🚪 Logout</a>
             </div>
+            
             <div class="container">
-                <h1 style="margin:2rem 0 1.5rem;color:#0f172a;font-size:2.2rem;">Bid Overview & AI Analysis</h1>
+                <h1 style="color: #0f172a; margin: 25px 0 30px; font-size: 36px; font-weight: 800;">📊 Real-Time Bid Analysis & AI Comparison</h1>
                 
                 <div class="stats-grid">
-                    <div class="stat-card"><div class="stat-value">{total_bids}</div><div>Total Bids</div></div>
-                    <div class="stat-card" style="border-top-color:var(--success);"><div class="stat-value">{fair_count}</div><div>Fair Bids</div></div>
-                    <div class="stat-card" style="border-top-color:var(--warning);"><div class="stat-value">{unfair_count}</div><div>Flagged Bids</div></div>
-                    <div class="stat-card"><div class="stat-value">₦{total_value:,.1f}B</div><div>Total Value</div></div>
+                    <div class="stat-card">
+                        <div style="font-size: 24px; margin-bottom: 8px">📋</div>
+                        <div class="stat-value">{total_bids}</div>
+                        <div class="stat-label">TOTAL BIDS SUBMITTED</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #10b981;">
+                        <div style="font-size: 24px; margin-bottom: 8px">✅</div>
+                        <div class="stat-value">{sum(1 for b in enhanced_bids if b['is_fair'])}</div>
+                        <div class="stat-label">FAIR BIDS (AI APPROVED)</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #f59e0b;">
+                        <div style="font-size: 24px; margin-bottom: 8px">⚠️</div>
+                        <div class="stat-value">{sum(1 for b in enhanced_bids if not b['is_fair'])}</div>
+                        <div class="stat-label">INFLATED BIDS (AI FLAGGED)</div>
+                    </div>
+                    <div class="stat-card" style="border-top-color: #0ea5e9;">
+                        <div style="font-size: 24px; margin-bottom: 8px">💰</div>
+                        <div class="stat-value">₦{sum(b['bid_amount'] for b in enhanced_bids):.2f}B</div>
+                        <div class="stat-label">TOTAL BID VALUE</div>
+                    </div>
                 </div>
-
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th><th>Contract</th><th>Company / CAC</th><th>Contact</th>
-                            <th>Bid (₦B)</th><th>AI Fair Range</th><th>Assessment</th><th>Status</th><th>Time</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-{body_html}
-                    </tbody>
-                </table>
+                
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Bid ID</th>
+                                <th>Contract Name</th>
+                                <th>Company / CAC</th>
+                                <th>Contact</th>
+                                <th>Bid Amount (₦B)</th>
+                                <th>AI Fair Range (₦B)</th>
+                                <th>AI Assessment</th>
+                                <th>Status</th>
+                                <th>Submitted</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        """
+        
+        if not enhanced_bids:
+            admin_html += """
+                <tr>
+                    <td colspan="9" class="empty-state">
+                        <i>📭</i>
+                        <h3>No Bids Submitted Yet</h3>
+                        <p style="font-size:18px;margin-top:10px">Bidders need to submit bids through the frontend portal.<br>Submit a test bid to verify the system is working.</p>
+                        <div style="background:#dbeafe;border-radius:12px;padding:15px;margin-top:20px;font-size:16px">
+                            <strong>💡 Pro Tip:</strong> Submit a test bid yourself to verify the system is working
+                        </div>
+                    </td>
+                </tr>
+            """
+        else:
+            for bid in enhanced_bids:
+                row_class = "fair" if bid['is_fair'] else "unfair"
+                ai_assessment = "✅ FAIR PRICE" if bid['is_fair'] else "⚠️ INFLATED"
+                ai_class = "range-good" if bid['is_fair'] else "range-bad"
+                status_class = "status-approved" if "Approved" in str(bid['status']) else "status-rejected"
+                
+                admin_html += f"""
+                <tr class="{row_class}">
+                    <td><strong>#{bid['bid_id']}</strong></td>
+                    <td><strong>{bid['contract_name']}</strong></td>
+                    <td>
+                        <div style="font-weight:600;color:#1e293b">{bid['company_name']}</div>
+                        <div style="color:#475569;font-size:14px;margin-top:4px">CAC: {bid['cac_number']}</div>
+                    </td>
+                    <td>
+                        <div>{bid['email']}</div>
+                        <div style="color:#475569;font-size:14px;margin-top:2px">{bid['phone']}</div>
+                    </td>
+                    <td><strong style="font-size:18px;color:#0f172a">₦{bid['bid_amount']:.2f}</strong></td>
+                    <td><span class="{ai_class}" style="font-weight:700;font-size:16px">₦{bid['fair_min']:.2f} - ₦{bid['fair_max']:.2f}</span></td>
+                    <td><span class="{ai_class}" style="font-weight:700;font-size:17px">{ai_assessment}</span></td>
+                    <td><span class="{status_class}">{bid['status']}</span></td>
+                    <td class="timestamp">{bid['timestamp']}</td>
+                </tr>
+                """
+        
+        admin_html += """
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div style="background: white; border-radius: 20px; padding: 30px; margin-top: 30px; box-shadow: 0 6px 25px rgba(0,0,0,0.08);">
+                    <h2 style="color: #1e40af; margin-top: 0; font-size: 28px; display: flex; align-items: center; gap: 10px;">
+                        <span>🔍</span> How AI Assessment Works
+                    </h2>
+                    <ul style="line-height: 2.0; color: #334155; padding-left: 30px; font-size: 17px; margin-top: 15px;">
+                        <li><span class="highlight">🟢 GREEN ROWS</span> = Bid amount falls within AI's calculated fair price range (±10% of inflation-adjusted prediction)</li>
+                        <li><span class="highlight">🟠 ORANGE ROWS</span> = Bid amount exceeds AI's fair range (potential fraud indicator)</li>
+                        <li>AI analyzes: Terrain type, GPS coordinates, soil conditions, bridge requirements, historical pricing, and 12% inflation adjustment</li>
+                        <li>All predictions use the <strong>exact same model</strong> that evaluated bids at submission time</li>
+                        <li>Fair Range Formula: <code style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-family:monospace">[AI Prediction × 0.9, AI Prediction × 1.1]</code></li>
+                    </ul>
+                    
+                    <div style="background:#f0fdf4;border-left:4px solid #10b981;padding:20px;border-radius:0 12px 12px 0;margin-top:25px;">
+                        <h3 style="color:#065f46;font-size:20px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+                            <span>✅</span> Action Items for Admins
+                        </h3>
+                        <ol style="padding-left:25px;color:#065f46;line-height:1.8;font-size:16px;">
+                            <li><strong>Review orange rows first</strong> - These require manual verification for potential fraud</li>
+                            <li><strong>Contact bidders</strong> using email/phone for inflated bids to request justification</li>
+                            <li><strong>Export data</strong> (future feature) for detailed analysis in Excel</li>
+                            <li><strong>Monitor trends</strong> - Are certain contractors consistently submitting inflated bids?</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="text-align:center;padding:30px;color:#64748b;font-size:15px;background:#f8fafc;margin-top:20px;border-radius:16px;">
+                <p>🛡️ AISEC - AI for Secure and Efficient Contracting • Real-time fraud detection since 2026</p>
+                <p style="margin-top:8px;font-weight:600;color:#1e40af">System Status: <span style="color:#10b981">✅ All Systems Operational</span></p>
             </div>
         </body>
         </html>
-        """)
-
+        """
+        return admin_html
+        
     except HTTPException:
-        return RedirectResponse("/admin/login", status_code=303)
+        return RedirectResponse(url="/admin/login", status_code=303)
     except Exception as e:
-        print(f"Dashboard error: {str(e)}")
-        return HTMLResponse(f"<h1>Server Error</h1><pre>{str(e)}</pre>", status_code=500)
+        print(f"✗✗✗ ADMIN DASHBOARD ERROR: {str(e)}")
+        return f"""
+        <div style='max-width:700px;margin:50px auto;background:#fef2f2;border:3px solid #ef4444;border-radius:20px;padding:40px;text-align:center'>
+            <div style='font-size:64px;margin-bottom:20px'>⚠️</div>
+            <h1 style='color:#991b1b;margin-bottom:15px'>Admin Dashboard Error</h1>
+            <p style='color:#991b1b;font-size:18px;margin-bottom:25px'>Unable to load bid data</p>
+            <div style='background:#fee2e2;padding:20px;border-radius:12px;margin:20px 0;font-family:monospace;color:#b91c1c;text-align:left;overflow:auto;max-height:200px'>{str(e)}</div>
+            <a href='/admin/login' style='display:inline-block;margin-top:20px;padding:14px 35px;background:#1e40af;color:white;text-decoration:none;border-radius:10px;font-weight:600;font-size:16px'>⇦ Return to Login</a>
+        </div>
+        """
 
 @app.get("/admin/logout", response_class=HTMLResponse)
 async def admin_logout(response: Response):
-    resp = RedirectResponse("/admin/login", status_code=303)
-    resp.delete_cookie("admin_token")
-    return resp
-
-@app.get("/debug/bids")
-def debug_bids():
-    with get_db() as conn:
-        rows = conn.execute("SELECT * FROM bids ORDER BY timestamp DESC LIMIT 5").fetchall()
-        if not rows:
-            return {"message": "No bids in DB"}
-        result = []
-        for row in rows:
-            result.append(dict(row))
-        return result
-
-@app.get("/debug/check-db")
-def debug_check_db():
-    try:
-        with get_db() as conn:
-            count = conn.execute("SELECT COUNT(*) FROM bids").fetchone()[0]
-            return {"bids_count": count, "db_path": DB_PATH, "file_exists": os.path.exists(DB_PATH)}
-    except Exception as e:
-        return {"error": str(e)}
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie("admin_token")
+    return response
