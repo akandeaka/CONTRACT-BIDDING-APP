@@ -311,7 +311,7 @@ async def submit_bid(
         INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
-        conn.commit()  # ← THIS ENSURES BID IS SAVED PERMANENTLY
+        conn.commit() 
         
         bid_id = cursor.lastrowid
         print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount:.2f}B")
@@ -666,3 +666,4 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
