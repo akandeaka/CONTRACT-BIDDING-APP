@@ -296,25 +296,56 @@ async def submit_bid(
     equipment_list: str = Form(...),
     workforce: str = Form(...),
 ):
-    try:
+        # 🔢 Safely convert bid_amount to float
+        try:
+            clean_bid_amount = bid_amount.replace(",", "").strip()
+            bid_amount_value = float(clean_bid_amount)
+        except ValueError:
+            return """
+            <div style='max-width:650px;margin:30px auto;background:#fef2f2;border:3px solid #ef4444;border-radius:20px;padding:30px;text-align:center;box-shadow:0 10px 30px rgba(239, 68, 68, 0.25)'>
+                <h1 style='color:#991b1b;margin-bottom:15px;font-size:24px'>❌ Invalid Bid Amount</h1>
+                <p style='color:#991b1b;font-size:16px;margin-bottom:20px'>
+                    Please enter a valid numeric bid amount (e.g. 10.5).
+                </p>
+                <a href='/contracts' style='display:inline-block;margin-top:15px;padding:12px 30px;background:#1e40af;color:white;text-decoration:none;border-radius:10px;font-weight:600;font-size:16px'>
+                    ⇦ Go Back & Retry
+                </a>
+            </div>
+            """
+
         try:
             user_id = get_current_user(request)
         except:
             user_id = None
-        
+            # 🔥 If user is logged in, always use company data from the database
+        if user_id is not None:
+            cursor.execute(
+                "SELECT company_name, cac_number, email FROM users WHERE id = ?",
+                (user_id,)
+            )
+            user_row = cursor.fetchone()
+            if user_row:
+                company_name = user_row[0]
+                cac_number = user_row[1]
+                email = user_row[2]
+    
         bidding_contract = df_bidding.iloc[contract_id]
         fair_min, fair_max = get_fair_price_range(bidding_contract)
-        status_msg = "Approved ✅" if fair_min <= bid_amount <= fair_max else "Rejected ❌"
+        status_msg = "Approved ✅" if fair_min <= bid_amount_value <= fair_max else "Rejected ❌"
+
 
         # CRITICAL FIX: Save bid with EXPLICIT COMMIT (persists to disk)
         cursor.execute("""
         INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status_msg))
+        """,(contract_id, user_id, company_name, cac_number, email, phone, bid_amount_value, equipment_list, workforce, status_msg))
         conn.commit() 
         
         bid_id = cursor.lastrowid
-        print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount:.2f}B")
+        Bid Amount: ₦{bid_amount_value:.2f} Billion
+        ...
+        print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount_value:.2f}B")
+
 
         # Send email notification (non-blocking)
         try:
@@ -666,4 +697,5 @@ async def admin_logout(response: Response):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("admin_token")
     return response
+
 
