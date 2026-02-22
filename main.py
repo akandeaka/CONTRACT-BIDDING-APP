@@ -87,8 +87,10 @@ CREATE TABLE IF NOT EXISTS admins (
 """)
 
 try:
-    cursor.execute("INSERT INTO admins (username, hashed_password) VALUES (?, ?)", 
-                   ("admin", hashlib.sha256("admin123".encode()).hexdigest()))
+    cursor.execute(
+        "INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
+        ("admin", hashlib.sha256("admin123".encode()).hexdigest())
+    )
     conn.commit()
 except sqlite3.IntegrityError:
     pass
@@ -101,7 +103,7 @@ def send_bid_notification(email, company_name, contract_name, status, bid_amount
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"  # ← REPLACE WITH YOUR GMAIL
-        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"  # ← GET FROM GOOGLE ACCOUNT SECURITY
+        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"      # ← GET FROM GOOGLE ACCOUNT SECURITY
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -183,11 +185,18 @@ def register_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
 @app.post("/register", response_class=HTMLResponse)
-async def register_user(company_name: str = Form(...), cac_number: str = Form(...), email: str = Form(...), password: str = Form(...)):
+async def register_user(
+    company_name: str = Form(...),
+    cac_number: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...)
+):
     try:
         hashed = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
-                       (company_name, cac_number, email, hashed))
+        cursor.execute(
+            "INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
+            (company_name, cac_number, email, hashed)
+        )
         conn.commit()
         return "<h2 style='color:green;text-align:center;'>✅ Registration successful!</h2><p style='text-align:center;'><a href='/login'>Login here</a></p>"
     except sqlite3.IntegrityError:
@@ -292,10 +301,29 @@ async def submit_bid(
     cac_number: str = Form(...),
     email: str = Form(...),
     phone: str = Form(...),
-    bid_amount: float = Form(...),
+    bid_amount: str = Form(...),
     equipment_list: str = Form(...),
     workforce: str = Form(...),
 ):
+    try:
+        # Get current user (if logged in)
+        try:
+            user_id = get_current_user(request)
+        except HTTPException:
+            user_id = None
+
+        # 🔥 If user is logged in, always use company data from the database
+        if user_id is not None:
+            cursor.execute(
+                "SELECT company_name, cac_number, email FROM users WHERE id = ?",
+                (user_id,)
+            )
+            user_row = cursor.fetchone()
+            if user_row:
+                company_name = user_row[0]
+                cac_number = user_row[1]
+                email = user_row[2]
+
         # 🔢 Safely convert bid_amount to float
         try:
             clean_bid_amount = bid_amount.replace(",", "").strip()
@@ -313,43 +341,23 @@ async def submit_bid(
             </div>
             """
 
-        try:
-            user_id = get_current_user(request)
-        except:
-            user_id = None
-            # 🔥 If user is logged in, always use company data from the database
-        if user_id is not None:
-            cursor.execute(
-                "SELECT company_name, cac_number, email FROM users WHERE id = ?",
-                (user_id,)
-            )
-            user_row = cursor.fetchone()
-            if user_row:
-                company_name = user_row[0]
-                cac_number = user_row[1]
-                email = user_row[2]
-    
         bidding_contract = df_bidding.iloc[contract_id]
         fair_min, fair_max = get_fair_price_range(bidding_contract)
         status_msg = "Approved ✅" if fair_min <= bid_amount_value <= fair_max else "Rejected ❌"
-
 
         # CRITICAL FIX: Save bid with EXPLICIT COMMIT (persists to disk)
         cursor.execute("""
         INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,(contract_id, user_id, company_name, cac_number, email, phone, bid_amount_value, equipment_list, workforce, status_msg))
+        """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount_value, equipment_list, workforce, status_msg))
         conn.commit() 
         
         bid_id = cursor.lastrowid
-        Bid Amount: ₦{bid_amount_value:.2f} Billion
-        ...
         print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount_value:.2f}B")
-
 
         # Send email notification (non-blocking)
         try:
-            send_bid_notification(email, company_name, bidding_contract['project_name'], status_msg, bid_amount)
+            send_bid_notification(email, company_name, bidding_contract['project_name'], status_msg, bid_amount_value)
             email_status = "<p style='color:#10b981;font-weight:600;margin:15px 0;font-size:18px'>📧 Email confirmation sent!</p>"
         except Exception as e:
             print(f"⚠️ Email failed (bid saved): {str(e)}")
@@ -367,7 +375,7 @@ async def submit_bid(
                 <p style='margin:10px 0'><strong>📝 Contract:</strong> <span style='color:#1e40af;font-weight:600'>{bidding_contract['project_name']}</span></p>
                 <p style='margin:10px 0'><strong>🏢 Company:</strong> {company_name}</p>
                 <p style='margin:10px 0'><strong>🆔 CAC Number:</strong> {cac_number}</p>
-                <p style='margin:10px 0'><strong>💰 Bid Amount:</strong> <span style='font-size:20px;font-weight:bold;color:#065f46'>₦{bid_amount:.2f} Billion</span></p>
+                <p style='margin:10px 0'><strong>💰 Bid Amount:</strong> <span style='font-size:20px;font-weight:bold;color:#065f46'>₦{bid_amount_value:.2f} Billion</span></p>
                 <p style='margin:10px 0;font-weight:bold;color:{'#10b981' if 'Approved' in status_msg else '#ef4444'};font-size:17px'>
                     <strong>📊 AI Assessment:</strong> {status_msg}
                 </p>
@@ -597,105 +605,50 @@ def admin_dashboard(request: Request):
                         </thead>
                         <tbody>
         """
-        
+
         if not enhanced_bids:
             admin_html += """
                 <tr>
                     <td colspan="9" class="empty-state">
                         <i>📭</i>
-                        <h3>No Bids Submitted Yet</h3>
-                        <p style="font-size:18px;margin-top:10px">Bidders need to submit bids through the frontend portal.<br>Submit a test bid to verify the system is working.</p>
-                        <div style="background:#dbeafe;border-radius:12px;padding:15px;margin-top:20px;font-size:16px">
-                            <strong>💡 Pro Tip:</strong> Submit a test bid yourself to verify the system is working
-                        </div>
+                        <h3>No bids have been submitted yet</h3>
+                        <p>Once contractors start submitting bids, they will appear here with AI analysis.</p>
                     </td>
                 </tr>
             """
         else:
-            for bid in enhanced_bids:
-                row_class = "fair" if bid['is_fair'] else "unfair"
-                ai_assessment = "✅ FAIR PRICE" if bid['is_fair'] else "⚠️ INFLATED"
-                ai_class = "range-good" if bid['is_fair'] else "range-bad"
-                status_class = "status-approved" if "Approved" in str(bid['status']) else "status-rejected"
-                
+            for b in enhanced_bids:
+                row_class = "fair" if b['is_fair'] else "unfair"
+                range_class = "range-good" if b['is_fair'] else "range-bad"
+                status_class = "status-approved" if "Approved" in b['status'] else "status-rejected"
                 admin_html += f"""
                 <tr class="{row_class}">
-                    <td><strong>#{bid['bid_id']}</strong></td>
-                    <td><strong>{bid['contract_name']}</strong></td>
-                    <td>
-                        <div style="font-weight:600;color:#1e293b">{bid['company_name']}</div>
-                        <div style="color:#475569;font-size:14px;margin-top:4px">CAC: {bid['cac_number']}</div>
-                    </td>
-                    <td>
-                        <div>{bid['email']}</div>
-                        <div style="color:#475569;font-size:14px;margin-top:2px">{bid['phone']}</div>
-                    </td>
-                    <td><strong style="font-size:18px;color:#0f172a">₦{bid['bid_amount']:.2f}</strong></td>
-                    <td><span class="{ai_class}" style="font-weight:700;font-size:16px">₦{bid['fair_min']:.2f} - ₦{bid['fair_max']:.2f}</span></td>
-                    <td><span class="{ai_class}" style="font-weight:700;font-size:17px">{ai_assessment}</span></td>
-                    <td><span class="{status_class}">{bid['status']}</span></td>
-                    <td class="timestamp">{bid['timestamp']}</td>
+                    <td>{b['bid_id']}</td>
+                    <td>{b['contract_name']}</td>
+                    <td>{b['company_name']}<br><span class="highlight">{b['cac_number']}</span></td>
+                    <td>{b['email']}<br>{b['phone']}</td>
+                    <td>₦{b['bid_amount']:.2f}</td>
+                    <td class="{range_class}">₦{b['fair_min']:.2f} - ₦{b['fair_max']:.2f}</td>
+                    <td class="{status_class}">{b['status']}</td>
+                    <td>{b['status']}</td>
+                    <td class="timestamp">{b['timestamp']}</td>
                 </tr>
                 """
-        
+
         admin_html += """
                         </tbody>
                     </table>
                 </div>
-                
-                <div style="background: white; border-radius: 20px; padding: 30px; margin-top: 30px; box-shadow: 0 6px 25px rgba(0,0,0,0.08);">
-                    <h2 style="color: #1e40af; margin-top: 0; font-size: 28px; display: flex; align-items: center; gap: 10px;">
-                        <span>🔍</span> How AI Assessment Works
-                    </h2>
-                    <ul style="line-height: 2.0; color: #334155; padding-left: 30px; font-size: 17px; margin-top: 15px;">
-                        <li><span class="highlight">🟢 GREEN ROWS</span> = Bid amount falls within AI's calculated fair price range (±10% of inflation-adjusted prediction)</li>
-                        <li><span class="highlight">🟠 ORANGE ROWS</span> = Bid amount exceeds AI's fair range (potential fraud indicator)</li>
-                        <li>AI analyzes: Terrain type, GPS coordinates, soil conditions, bridge requirements, historical pricing, and 12% inflation adjustment</li>
-                        <li>All predictions use the <strong>exact same model</strong> that evaluated bids at submission time</li>
-                        <li>Fair Range Formula: <code style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-family:monospace">[AI Prediction × 0.9, AI Prediction × 1.1]</code></li>
-                    </ul>
-                    
-                    <div style="background:#f0fdf4;border-left:4px solid #10b981;padding:20px;border-radius:0 12px 12px 0;margin-top:25px;">
-                        <h3 style="color:#065f46;font-size:20px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-                            <span>✅</span> Action Items for Admins
-                        </h3>
-                        <ol style="padding-left:25px;color:#065f46;line-height:1.8;font-size:16px;">
-                            <li><strong>Review orange rows first</strong> - These require manual verification for potential fraud</li>
-                            <li><strong>Contact bidders</strong> using email/phone for inflated bids to request justification</li>
-                            <li><strong>Export data</strong> (future feature) for detailed analysis in Excel</li>
-                            <li><strong>Monitor trends</strong> - Are certain contractors consistently submitting inflated bids?</li>
-                        </ol>
-                    </div>
-                </div>
-            </div>
-            
-            <div style="text-align:center;padding:30px;color:#64748b;font-size:15px;background:#f8fafc;margin-top:20px;border-radius:16px;">
-                <p>🛡️ AISEC - AI for Secure and Efficient Contracting • Real-time fraud detection since 2026</p>
-                <p style="margin-top:8px;font-weight:600;color:#1e40af">System Status: <span style="color:#10b981">✅ All Systems Operational</span></p>
             </div>
         </body>
         </html>
         """
-        return admin_html
-        
+        return HTMLResponse(content=admin_html)
     except HTTPException:
         return RedirectResponse(url="/admin/login", status_code=303)
     except Exception as e:
         print(f"✗✗✗ ADMIN DASHBOARD ERROR: {str(e)}")
-        return f"""
-        <div style='max-width:700px;margin:50px auto;background:#fef2f2;border:3px solid #ef4444;border-radius:20px;padding:40px;text-align:center'>
-            <div style='font-size:64px;margin-bottom:20px'>⚠️</div>
-            <h1 style='color:#991b1b;margin-bottom:15px'>Admin Dashboard Error</h1>
-            <p style='color:#991b1b;font-size:18px;margin-bottom:25px'>Unable to load bid data</p>
-            <div style='background:#fee2e2;padding:20px;border-radius:12px;margin:20px 0;font-family:monospace;color:#b91c1c;text-align:left;overflow:auto;max-height:200px'>{str(e)}</div>
-            <a href='/admin/login' style='display:inline-block;margin-top:20px;padding:14px 35px;background:#1e40af;color:white;text-decoration:none;border-radius:10px;font-weight:600;font-size:16px'>⇦ Return to Login</a>
-        </div>
-        """
-
-@app.get("/admin/logout", response_class=HTMLResponse)
-async def admin_logout(response: Response):
-    response = RedirectResponse(url="/admin/login", status_code=303)
-    response.delete_cookie("admin_token")
-    return response
-
-
+        return HTMLResponse(
+            content=f"<h2 style='color:red;text-align:center;'>Dashboard error: {str(e)}</h2>",
+            status_code=500
+        )
