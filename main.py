@@ -47,8 +47,12 @@ df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)
 df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
+# ===== DATABASE SETUP (ABSOLUTE PATH) =====
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "bids.db")
+
 # Database setup (CORRECTED SCHEMA - NO FOREIGN KEY CONSTRAINT)
-conn = sqlite3.connect("bids.db", check_same_thread=False)
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -599,7 +603,6 @@ def admin_dashboard(request: Request):
                                 <th>Bid Amount (₦B)</th>
                                 <th>AI Fair Range (₦B)</th>
                                 <th>AI Assessment</th>
-                                <th>Status</th>
                                 <th>Submitted</th>
                             </tr>
                         </thead>
@@ -609,7 +612,7 @@ def admin_dashboard(request: Request):
         if not enhanced_bids:
             admin_html += """
                 <tr>
-                    <td colspan="9" class="empty-state">
+                    <td colspan="8" class="empty-state">
                         <i>📭</i>
                         <h3>No bids have been submitted yet</h3>
                         <p>Once contractors start submitting bids, they will appear here with AI analysis.</p>
@@ -630,7 +633,6 @@ def admin_dashboard(request: Request):
                     <td>₦{b['bid_amount']:.2f}</td>
                     <td class="{range_class}">₦{b['fair_min']:.2f} - ₦{b['fair_max']:.2f}</td>
                     <td class="{status_class}">{b['status']}</td>
-                    <td>{b['status']}</td>
                     <td class="timestamp">{b['timestamp']}</td>
                 </tr>
                 """
