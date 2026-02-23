@@ -17,7 +17,7 @@ import secrets
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# CORS middleware (NO TRAILING SPACES - CRITICAL)
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -30,7 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# URLs for datasets (NO TRAILING SPACES - CRITICAL)
+# URLs for datasets
 TRAINING_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTXlHZrU20uniUkjr-5Pis1pfJSOYDUiFVcML6UqW2Lu176_opvZPQvTGOpQZnNx02HyFf-jRYw3O8o/pub?output=csv"
 BIDDING_CONTRACTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS-nWpM2oCQ5xmda7a3tlLiRmMC2VaAdG4IhoQsypuVvbYDgtDaWn_bYcClrc35XUoHRvvMEISXTvCw/pub?output=csv"
 
@@ -47,12 +47,8 @@ df_training = pd.read_csv(TRAINING_DATA_URL).reset_index(drop=True)
 df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
-# ===== DATABASE SETUP (ABSOLUTE PATH) =====
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "bids.db")
-
-# Database setup (CORRECTED SCHEMA - NO FOREIGN KEY CONSTRAINT)
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+# ===== DATABASE SETUP =====
+conn = sqlite3.connect("bids.db", check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -68,7 +64,7 @@ CREATE TABLE IF NOT EXISTS users (
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS bids (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contract_id INTEGER NOT NULL,
+    contract_id INTEGER NOT NULL,  -- STORES INTEGER INDEX FROM DATAFRAME
     user_id INTEGER,
     company_name TEXT NOT NULL,
     cac_number TEXT NOT NULL,
@@ -101,13 +97,13 @@ except sqlite3.IntegrityError:
 
 conn.commit()
 
-# Email function (UPDATE CREDENTIALS BEFORE DEPLOYING)
+# ===== EMAIL =====
 def send_bid_notification(email, company_name, contract_name, status, bid_amount):
     try:
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
-        EMAIL_USER = "aisec2025.notifications@gmail.com"  # REPLACE WITH YOUR GMAIL
-        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"      # APP PASSWORD
+        EMAIL_USER = "aisec2025.notifications@gmail.com"  # REPLACE
+        EMAIL_PASSWORD = "YOUR_16_CHAR_APP_PASSWORD"      # REPLACE
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -141,6 +137,7 @@ AISEC Team"""
         print(f"✗ Email FAILED: {str(e)}")
         return False
 
+# ===== SESSIONS =====
 sessions = {}
 
 def create_session(user_id: int) -> str:
@@ -160,10 +157,10 @@ def get_admin_user(request: Request):
         raise HTTPException(status_code=401, detail="Admin not authenticated")
     return sessions[token]
 
+# ===== MODEL HELPERS =====
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
 
-# CRITICAL FIX: REMOVED ALL TRAILING SPACES IN FEATURE COLUMNS
 def get_fair_price_range(contract_row):
     feature_columns = [
         "award_year", "award_month", "primary_state", "geopolitical_zone",
@@ -314,7 +311,7 @@ async def submit_bid(
         except HTTPException:
             user_id = None
 
-        # If user is logged in, always use company data from the database
+        # If user is logged in, always use company data from DB
         if user_id is not None:
             cursor.execute(
                 "SELECT company_name, cac_number, email FROM users WHERE id = ?",
@@ -347,12 +344,12 @@ async def submit_bid(
         fair_min, fair_max = get_fair_price_range(bidding_contract)
         status_msg = "Approved ✅" if fair_min <= bid_amount_value <= fair_max else "Rejected ❌"
 
-        # Save bid with explicit commit
+        # Save bid
         cursor.execute("""
         INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount_value, equipment_list, workforce, status_msg))
-        conn.commit() 
+        conn.commit()
         
         bid_id = cursor.lastrowid
         print(f"✓✓✓ BID SAVED SUCCESSFULLY! ID:{bid_id} Contract:{contract_id} Amount:₦{bid_amount_value:.2f}B")
@@ -365,11 +362,10 @@ async def submit_bid(
             print(f"⚠️ Email failed (bid saved): {str(e)}")
             email_status = "<p style='color:#f59e0b;font-weight:600;margin:15px 0;font-size:18px'>⚠️ Bid saved (email failed)</p>"
 
-        # Determine color for AI assessment
         color = "#10b981" if "Approved" in status_msg else "#ef4444"
 
-        # Visible success message
-        return f"""
+        # Visible success HTML page
+        html = f"""
         <div style='max-width:750px;margin:30px auto;background:linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);border:3px solid #10b981;border-radius:20px;padding:30px;text-align:center;box-shadow:0 10px 30px rgba(16, 185, 129, 0.25);animation:fadeIn 0.6s'>
             <style>@keyframes fadeIn {{ from {{ opacity:0; transform: translateY(20px); }} to {{ opacity:1; transform: translateY(0); }} }}</style>
             <div style='width:70px;height:70px;background:#10b981;border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;color:white;font-size:32px'>✓</div>
@@ -406,6 +402,7 @@ async def submit_bid(
             </a>
         </div>
         """
+        return HTMLResponse(content=html)
         
     except HTTPException:
         return RedirectResponse(url="/login", status_code=303)
@@ -419,7 +416,7 @@ async def submit_bid(
         else:
             error_msg = "Submission failed. Please try again."
         
-        return f"""
+        html = f"""
         <div style='max-width:650px;margin:30px auto;background:#fef2f2;border:3px solid #ef4444;border-radius:20px;padding:30px;text-align:center;box-shadow:0 10px 30px rgba(239, 68, 68, 0.25)'>
             <div style='width:70px;height:70px;background:#ef4444;border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;color:white;font-size:32px'>!</div>
             <h1 style='color:#991b1b;margin:0 0 12px;font-size:28px'>❌ SUBMISSION FAILED</h1>
@@ -432,6 +429,7 @@ async def submit_bid(
             </a>
         </div>
         """
+        return HTMLResponse(content=html)
 
 # ===== ADMIN ROUTES =====
 @app.get("/admin/login", response_class=HTMLResponse)
@@ -467,6 +465,12 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
     else:
         return "<h2 style='color:red;text-align:center'>❌ Invalid credentials</h2><p style='text-align:center'><a href='/admin/login' style='color:#2563eb;text-decoration:none'>Try again</a></p>"
 
+@app.get("/admin/logout", response_class=HTMLResponse)
+def admin_logout(response: Response):
+    resp = RedirectResponse(url="/admin/login", status_code=303)
+    resp.delete_cookie("admin_token")
+    return resp
+
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     try:
@@ -485,9 +489,9 @@ def admin_dashboard(request: Request):
         enhanced_bids = []
         for bid in bids:
             try:
-                contract_row = df_bidding.iloc[bid[1]]
+                contract_row = df_bidding.iloc[bid[1]]  # contract_id
                 fair_min, fair_max = get_fair_price_range(contract_row)
-                is_fair = fair_min <= bid[6] <= fair_max
+                is_fair = fair_min <= bid[6] <= fair_max  # bid_amount
                 
                 enhanced_bids.append({
                     'contract_name': contract_row['project_name'],
@@ -541,8 +545,8 @@ def admin_dashboard(request: Request):
                 th {{ background: linear-gradient(135deg, #f8fafc, #e2e8f0); padding: 18px 15px; text-align: left; font-weight: 800; color: #1e40af; font-size: 15px; position: sticky; top: 70px; z-index: 90; }}
                 td {{ padding: 16px 15px; border-bottom: 1px solid #f1f5f9; font-size: 15px; }}
                 tr:hover {{ background: #f8fafc; }}
-                .fair {{ background: linear-gradient(to right, #f0fdf4 95%, #bbf7d0 5%); border-left: 5px solid var(--success); }}
-                .unfair {{ background: linear-gradient(to right, #fff7ed 95%, #fcd34d 5%); border-left: 5px solid var(--warning); }}
+                .fair {{ background: #f0fdf4; border-left: 5px solid var(--success); }}
+                .unfair {{ background: #fff7ed; border-left: 5px solid var(--warning); }}
                 .status-approved {{ color: var(--success); font-weight: 700; font-size: 16px; }}
                 .status-rejected {{ color: var(--danger); font-weight: 700; font-size: 16px; }}
                 .range-good {{ color: var(--success); font-weight: 700; }}
@@ -550,10 +554,8 @@ def admin_dashboard(request: Request):
                 .logout-btn {{ background: linear-gradient(135deg, var(--danger), #b91c1c); color: white; padding: 12px 28px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4); transition: all 0.3s; }}
                 .logout-btn:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6); }}
                 .logo {{ font-size: 28px; font-weight: 800; display: flex; align-items: center; gap: 12px; }}
-                .highlight {{ background: #dbeafe; padding: 3px 10px; border-radius: 8px; font-weight: 700; }}
-                .empty-state {{ text-align: center; padding: 60px 20px; color: #64748b; }}
-                .empty-state i {{ font-size: 64px; margin-bottom: 20px; opacity: 0.3; }}
-                .empty-state h3 {{ font-size: 28px; margin: 15px 0; color: #334155; }}
+                .empty-state {{ text-align: center; padding: 40px 20px; color: #64748b; }}
+                .empty-state i {{ font-size: 48px; margin-bottom: 10px; opacity: 0.4; display:block; }}
                 .timestamp {{ color: #475569; font-family: monospace; font-size: 14px; }}
             </style>
         </head>
@@ -600,6 +602,7 @@ def admin_dashboard(request: Request):
                                 <th>Bid Amount (₦B)</th>
                                 <th>AI Fair Range (₦B)</th>
                                 <th>AI Assessment</th>
+                                <th>Status</th>
                                 <th>Submitted</th>
                             </tr>
                         </thead>
@@ -609,27 +612,30 @@ def admin_dashboard(request: Request):
         if not enhanced_bids:
             admin_html += """
                 <tr>
-                    <td colspan="8" class="empty-state">
-                        <i>📭</i>
-                        <h3>No bids have been submitted yet</h3>
-                        <p>Once contractors start submitting bids, they will appear here with AI analysis.</p>
+                    <td colspan="9">
+                        <div class="empty-state">
+                            <i>📭</i>
+                            <h3>No bids submitted yet</h3>
+                            <p>When suppliers submit bids, they will appear here with AI analysis.</p>
+                        </div>
                     </td>
                 </tr>
             """
         else:
             for b in enhanced_bids:
-                row_class = "fair" if b['is_fair'] else "unfair"
-                range_class = "range-good" if b['is_fair'] else "range-bad"
-                status_class = "status-approved" if "Approved" in b['status'] else "status-rejected"
+                row_class = "fair" if b["is_fair"] else "unfair"
+                range_class = "range-good" if b["is_fair"] else "range-bad"
+                status_class = "status-approved" if "Approved" in b["status"] else "status-rejected"
                 admin_html += f"""
                 <tr class="{row_class}">
                     <td>{b['bid_id']}</td>
                     <td>{b['contract_name']}</td>
-                    <td>{b['company_name']}<br><span class="highlight">{b['cac_number']}</span></td>
-                    <td>{b['email']}<br>{b['phone']}</td>
-                    <td>₦{b['bid_amount']:.2f}</td>
-                    <td class="{range_class}">₦{b['fair_min']:.2f} - ₦{b['fair_max']:.2f}</td>
-                    <td class="{status_class}">{b['status']}</td>
+                    <td>{b['company_name']}<br><span style="color:#6b7280;font-size:13px;">{b['cac_number']}</span></td>
+                    <td>{b['email']}<br><span style="color:#6b7280;font-size:13px;">{b['phone']}</span></td>
+                    <td>₦{b['bid_amount']:.2f}B</td>
+                    <td class="{range_class}">₦{b['fair_min']:.2f}B - ₦{b['fair_max']:.2f}B</td>
+                    <td class="{status_class}">{'Within Range ✅' if b['is_fair'] else 'Inflated ⚠️'}</td>
+                    <td>{b['status']}</td>
                     <td class="timestamp">{b['timestamp']}</td>
                 </tr>
                 """
@@ -642,12 +648,7 @@ def admin_dashboard(request: Request):
         </body>
         </html>
         """
+
         return HTMLResponse(content=admin_html)
     except HTTPException:
         return RedirectResponse(url="/admin/login", status_code=303)
-    except Exception as e:
-        print(f"✗✗✗ ADMIN DASHBOARD ERROR: {str(e)}")
-        return HTMLResponse(
-            content=f"<h2 style='color:red;text-align:center;'>Dashboard error: {str(e)}</h2>",
-            status_code=500
-        )
