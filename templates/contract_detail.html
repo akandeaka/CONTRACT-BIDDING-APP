@@ -1,177 +1,105 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contract Details - AISEC</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Contract Details</title>
     <style>
-        * {
+        body {
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        
-        body {
-            background: #f8fafc;
-            color: #1e293b;
-            line-height: 1.6;
-            padding: 20px;
-        }
-        
         .container {
-            max-width: 800px;
-            margin: 0 auto;
+            max-width: 900px;
+            margin: 40px auto;
             background: white;
             padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+            border-radius: 16px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
         }
-        
         h1 {
-            color: #2563eb;
-            margin-bottom: 24px;
-            font-size: 28px;
-            text-align: center;
-        }
-        
-        .location-section {
-            background: #f8fafc;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 4px solid #2563eb;
-        }
-        
-        .location-title {
-            font-weight: 700;
             color: #1e40af;
-            margin-bottom: 12px;
-            font-size: 18px;
-            text-align: center;
+            margin-bottom: 20px;
         }
-        
-        .detail-item {
-            margin: 16px 0;
-            padding: 12px 0;
-            border-bottom: 1px solid #f1f5f9;
-        }
-        
-        .detail-label {
-            font-weight: 600;
-            color: #64748b;
+        label {
+            font-weight: bold;
+            margin-top: 15px;
             display: block;
-            margin-bottom: 4px;
+            color: #1e293b;
         }
-        
-        .detail-value {
-            color: #0f172a;
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            margin-top: 6px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
             font-size: 16px;
         }
-        
-        .back-link {
-            display: inline-block;
-            margin-top: 24px;
-            color: #2563eb;
-            text-decoration: none;
-            font-weight: 600;
-            padding: 10px 20px;
-            border: 2px solid #2563eb;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            text-align: center;
-        }
-        
-        .back-link:hover {
-            background: #2563eb;
+        button {
+            margin-top: 25px;
+            padding: 14px 30px;
+            background: linear-gradient(135deg, #1e40af, #1e3a8a);
             color: white;
-            text-decoration: none;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
         }
-        
-        @media (max-width: 600px) {
-            .container {
-                padding: 20px;
-            }
-            
-            h1 {
-                font-size: 24px;
-            }
+        button:hover {
+            opacity: 0.9;
+        }
+        .back {
+            display: inline-block;
+            margin-top: 20px;
+            text-decoration: none;
+            color: #1e40af;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>{{ contract.project_name }}</h1>
-        
-        <!-- Exact Location with Coordinates -->
-        <div class="location-section">
-            <div class="location-title">📍 Exact Project Location</div>
-            <div class="detail-item">
-                <span class="detail-label">State:</span>
-                <span class="detail-value">{{ contract.primary_state }}, Nigeria</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-label">Coordinates:</span>
-                <span class="detail-value">{{ "%.6f"|format(contract.latitude_start) }}, {{ "%.6f"|format(contract.longitude_start) }}</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-label">Geopolitical Zone:</span>
-                <span class="detail-value">{{ contract.geopolitical_zone }}</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-label">Terrain Type:</span>
-                <span class="detail-value">{{ contract.terrain_type }}</span>
-            </div>
-        </div>
-        
-        <!-- Project Specifications -->
-        <div class="detail-item">
-            <span class="detail-label">Estimated Length:</span>
-            <span class="detail-value">{{ "%.2f"|format(contract.estimated_length_km) }} km</span>
-        </div>
-        
-        <div class="detail-item">
-            <span class="detail-label">Award Period:</span>
-            <span class="detail-value">{{ contract.award_month }}/{{ contract.award_year }}</span>
-        </div>
-        
-        <div class="detail-item">
-            <span class="detail-label">Has Bridge:</span>
-            <span class="detail-value">{{ "Yes" if contract.has_bridge else "No" }}</span>
-        </div>
-        
-        <div class="detail-item">
-            <span class="detail-label">Dual Carriageway:</span>
-            <span class="detail-value">{{ "Yes" if contract.is_dual_carriageway else "No" }}</span>
-        </div>
-        
-        <div class="detail-item">
-            <span class="detail-label">Rehabilitation Project:</span>
-            <span class="detail-value">{{ "Yes" if contract.is_rehabilitation else "No" }}</span>
-        </div>
-        
-        <div class="detail-item">
-            <span class="detail-label">Coastal/Swamp Area:</span>
-            <span class="detail-value">{{ "Yes" if contract.is_coastal_or_swamp else "No" }}</span>
-        </div>
-        
-        <div class="detail-item">
-            <span class="detail-label">Rainfall (mm/year):</span>
-            <span class="detail-value">{{ contract.rainfall_mm_per_year }}</span>
-        </div>
-        
-        <div class="detail-item">
-            <span class="detail-label">Soil Type:</span>
-            <span class="detail-value">{{ contract.soil_type }}</span>
-        </div>
-        
-        <div class="detail-item">
-            <span class="detail-label">Elevation (m):</span>
-            <span class="detail-value">{{ contract.elevation_m }}</span>
-        </div>
-        
-        <a href="/contracts" class="back-link">← Back to Contracts</a>
-    </div>
+
+<div class="container">
+
+    <h1>{{ contract.project_name }}</h1>
+
+    <p><strong>State:</strong> {{ contract.primary_state }}</p>
+    <p><strong>Length (km):</strong> {{ contract.estimated_length_km }}</p>
+    <p><strong>Terrain:</strong> {{ contract.terrain_type }}</p>
+    <p><strong>Rainfall:</strong> {{ contract.rainfall_mm_per_year }} mm/year</p>
+
+    <hr style="margin: 30px 0;">
+
+    <h2 style="color:#0f172a;">Submit Your Bid</h2>
+
+    <!-- ⭐ THIS IS THE FIXED FORM ⭐ -->
+    <form action="/contracts/{{ contract_id }}/submit_bid" method="POST">
+
+        <!-- Hidden fields (backend overrides these if user is logged in) -->
+        <input type="hidden" name="company_name" value="{{ contract.company_name if contract.company_name else '' }}">
+        <input type="hidden" name="cac_number" value="{{ contract.cac_number if contract.cac_number else '' }}">
+        <input type="hidden" name="email" value="{{ contract.email if contract.email else '' }}">
+
+        <label>Phone Number</label>
+        <input type="text" name="phone" placeholder="Enter phone number" required>
+
+        <label>Bid Amount (Billions ₦)</label>
+        <input type="text" name="bid_amount" placeholder="Example: 12.5" required>
+
+        <label>Equipment List</label>
+        <textarea name="equipment_list" placeholder="List your equipment..." required></textarea>
+
+        <label>Workforce Description</label>
+        <textarea name="workforce" placeholder="Describe your workforce..." required></textarea>
+
+        <button type="submit">Submit Bid</button>
+    </form>
+
+    <a href="/contracts" class="back">← Back to Contracts</a>
+
+</div>
+
 </body>
 </html>
