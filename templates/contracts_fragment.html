@@ -1,13 +1,5 @@
-```html
 {% for contract in contracts %}
-<form action="/contracts/{{ loop.index0 }}/submit_bid" method="POST">
-    <!-- remove onsubmit completely -->
-    <!-- keep your inputs -->
-    <input type="hidden" name="user_id" value="{{ user_id }}" />  <!-- if needed -->
-    ...
-    <button type="submit">Submit Bid</button>
-</form>
-< div class="feature-card">
+<div class="feature-card">
     <div class="feature-icon">
         <i class="fas fa-file-contract"></i>
     </div>
@@ -17,22 +9,30 @@
     <p><strong>Terrain:</strong> {{ contract.terrain_type }}</p>
     <p><strong>Geopolitical Zone:</strong> {{ contract.geopolitical_zone }}</p>
     
-    <form action="/contracts/{{ contract_index }}/submit_bid" method="POST" style="margin-top: 15px;">
+    <!-- Only one clean form per contract -->
+    <form action="/contracts/{{ loop.index0 }}/submit_bid" method="POST" style="margin-top: 15px;">
+        <!-- Hidden field with current user id (optional but useful) -->
         <input type="hidden" name="user_id" value="{{ user_id }}" />
-        <input type="text" name="company_name" placeholder="Company Name" required style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
-        <input type="text" name="cac_number" placeholder="CAC Number (e.g., RC1234567)" required pattern="RC\d{7,8}" style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
-        <input type="email" name="email" placeholder="Your Email" required style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
-        <input type="tel" name="phone" placeholder="Phone" required style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
-        <input type="number" step="0.01" name="bid_amount" placeholder="Your Bid Amount (₦ Billion)" required style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
-        <textarea name="equipment_list" placeholder="Equipment List" required style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; height: 60px;"></textarea>
-        <textarea name="workforce" placeholder="Workforce Details" required style="width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; height: 60px;"></textarea>
+        
+        <!-- These will be overridden in backend if user is logged in -->
+        <input type="text" name="company_name" placeholder="Company Name" required 
+               style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
+        <input type="text" name="cac_number" placeholder="CAC Number (e.g., RC1234567)" required pattern="RC\d{7,8}" 
+               style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
+        <input type="email" name="email" placeholder="Your Email" required 
+               style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
+        <input type="tel" name="phone" placeholder="Phone" required 
+               style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
+        <input type="number" step="0.01" name="bid_amount" placeholder="Your Bid Amount (₦ Billion)" required 
+               style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
+        <textarea name="equipment_list" placeholder="Equipment List" required 
+                  style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; height: 60px;"></textarea>
+        <textarea name="workforce" placeholder="Workforce Details" required 
+                  style="width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; height: 60px;"></textarea>
+        
         <button type="submit" class="btn btn-primary" style="width: 100%;">
             Submit Bid
         </button>
     </form>
 </div>
 {% endfor %}
-
-
-
-
