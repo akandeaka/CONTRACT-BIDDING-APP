@@ -1,6 +1,13 @@
 ```html
 {% for contract in contracts %}
-<div class="feature-card">
+<form action="/contracts/{{ loop.index0 }}/submit_bid" method="POST">
+    <!-- remove onsubmit completely -->
+    <!-- keep your inputs -->
+    <input type="hidden" name="user_id" value="{{ user_id }}" />  <!-- if needed -->
+    ...
+    <button type="submit">Submit Bid</button>
+</form>
+< div class="feature-card">
     <div class="feature-icon">
         <i class="fas fa-file-contract"></i>
     </div>
@@ -25,6 +32,7 @@
     </form>
 </div>
 {% endfor %}
+
 
 
 
