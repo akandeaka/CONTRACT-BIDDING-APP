@@ -147,9 +147,23 @@ def get_fair_price_range(contract_row):
         "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
         "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
     ]
-    features = contract_row[feature_columns]
+
+    # Only use columns that actually exist
+    available = [col for col in feature_columns if col in contract_row.index]
+
+    if not available:
+        print("[WARNING] No model features available → fallback range")
+        return 0, 0
+
+    features = contract_row[available]
     features_df = pd.DataFrame([features.values], columns=features.index)
-    base_price = model.predict(features_df)[0]
+
+    try:
+        base_price = model.predict(features_df)[0]
+    except Exception as e:
+        print(f"[ERROR] Model predict failed: {e}")
+        base_price = 0
+
     adjusted = adjust_for_inflation(base_price)
     return adjusted * 0.9, adjusted * 1.1
 
@@ -410,8 +424,15 @@ async def submit_bid(
             """, status_code=400)
 
         contract = df_bidding.iloc[contract_id]
+        print(f"[DEBUG] Contract {contract_id} has {len(contract)} columns")
         fair_min, fair_max = get_fair_price_range(contract)
-        status_msg = "Approved ✅" if fair_min <= bid_value <= fair_max else "Rejected ❌"
+        if fair_min == 0 and fair_max == 0:
+    fair_min = bid_value * 0.7
+    fair_max = bid_value * 1.3
+    status_msg = "Pending Review (limited data)"
+else:
+    status_msg = "Approved ✅" if fair_min <= bid_value <= fair_max else "Rejected ❌"
+        
 
         # Save bid + debug logging
         with get_db() as (cur, conn):
@@ -686,3 +707,4 @@ def debug_bids():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
