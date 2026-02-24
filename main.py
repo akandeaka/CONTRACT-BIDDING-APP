@@ -50,11 +50,18 @@ model = joblib.load(MODEL_PATH)
 # ===== DATABASE SETUP =====
 import psycopg2
 import os
+DATABASE_URL = os.getenv("DATABASE_URL")
 
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL is not set in environment variables")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-conn = psycopg2.connect(DATABASE_URL)
-cursor = conn.cursor()
+def get_connection():
+    return psycopg2.connect(
+        os.getenv("DATABASE_URL"),
+        sslmode="require"
+    )
+
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
@@ -657,4 +664,5 @@ def admin_dashboard(request: Request):
         return HTMLResponse(content=admin_html)
     except HTTPException:
         return RedirectResponse(url="/admin/login", status_code=303)
+
 
