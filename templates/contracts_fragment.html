@@ -10,7 +10,7 @@
     <p><strong>Terrain:</strong> {{ contract.terrain_type }}</p>
     <p><strong>Geopolitical Zone:</strong> {{ contract.geopolitical_zone }}</p>
     
-    <form onsubmit="submitBid({{ loop.index0 }}, event)" style="margin-top: 15px;">
+    <form action="/contracts/{{ contract_index }}/submit_bid" method="POST" style="margin-top: 15px;">
         <input type="hidden" name="user_id" value="{{ user_id }}" />
         <input type="text" name="company_name" placeholder="Company Name" required style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
         <input type="text" name="cac_number" placeholder="CAC Number (e.g., RC1234567)" required pattern="RC\d{7,8}" style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;">
@@ -25,5 +25,6 @@
     </form>
 </div>
 {% endfor %}
+
 
 
