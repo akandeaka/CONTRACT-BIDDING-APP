@@ -138,6 +138,14 @@ model = joblib.load(MODEL_PATH)
 def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
 
+
+
+    # Only use columns that actually exist
+    available = [col for col in feature_columns if col in contract_row.index]
+
+    if not available:
+        print("[WARNING] No model features available → fallback range")
+        return 0, 0
 def get_fair_price_range(contract_row):
     feature_columns = [
         "award_year", "award_month", "primary_state", "geopolitical_zone",
@@ -166,6 +174,7 @@ def get_fair_price_range(contract_row):
 
     adjusted = adjust_for_inflation(base_price)
     return adjusted * 0.9, adjusted * 1.1
+
 
 def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
@@ -707,4 +716,5 @@ def debug_bids():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
