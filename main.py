@@ -302,8 +302,6 @@ async def logout(response: Response):
 
 # ── Contracts list ───────────────────────────────
 
-# ── Contracts list ───────────────────────────────
-
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
     try:
@@ -314,154 +312,8 @@ def contracts(request: Request):
             company_row = cur.fetchone()
             if not company_row:
                 return RedirectResponse(url="/login", status_code=303)
-            company_name = company_row[0]
+            company_name = company_row[0].strip()  # .strip() to avoid whitespace issues
 
-            # ── DEBUG PRINT ────────────────────────────────
-            print(f"[DEBUG /contracts] user_id={user_id} | company_name='{company_name}'")
-
-            cur.execute("SELECT contract_id FROM bids WHERE company_name = %s", (company_name,))
-            existing_rows = cur.fetchall()
-            existing = {r[0] for r in existing_rows}
-
-            # ── DEBUG PRINT ────────────────────────────────
-            print(f"[DEBUG /contracts] Found {len(existing)} existing bids for '{company_name}': {sorted(existing)}")
-
-        all_contracts = df_bidding.to_dict(orient="records")
-        available = [c for i, c in enumerate(all_contracts) if i not in existing]
-
-        if not available:
-            return HTMLResponse(""" ... same as before ... """)
-
-        return templates.TemplateResponse("contracts_fragment.html", {
-            "request": request,
-            "contracts": available,
-            "user_id": user_id
-        })
-
-    except HTTPException:
-        return RedirectResponse(url="/login", status_code=303)
-    except Exception as e:
-        print(f"Contracts error: {e}")
-        return RedirectResponse(url="/login", status_code=303)
-
-
-# ── Bid submission ─────────────────────────────────
-
-@app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
-async def submit_bid(
-    request: Request,
-    contract_id: int,
-    company_name: str = Form(...),
-    cac_number: str = Form(...),
-    email: str = Form(...),
-    phone: str = Form(...),
-    bid_amount: str = Form(...),
-    equipment_list: str = Form(...),
-    workforce: str = Form(...)
-):
-    try:
-        user_id = get_current_user(request)
-
-        # Logged-in user → override form with DB values
-        with get_db() as (cur, conn):
-            cur.execute(
-                "SELECT company_name, cac_number, email FROM users WHERE id = %s",
-                (user_id,)
-            )
-            row = cur.fetchone()
-            if row:
-                company_name, cac_number, email = row
-
-        # Parse bid amount
-        try:
-            clean = bid_amount.replace(",", "").strip()
-            bid_value = float(clean)
-        except ValueError:
-            return HTMLResponse("""
-            <div style="max-width:650px;margin:50px auto;padding:30px;background:#fef2f2;border:3px solid #ef4444;border-radius:16px;text-align:center;">
-                <h1 style="color:#991b1b;">Invalid Bid Amount</h1>
-                <p>Please enter a valid number (e.g. 12.5 or 12,500,000,000)</p>
-                <a href="/contracts" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;">← Back</a>
-            </div>
-            """, status_code=400)
-
-        contract = df_bidding.iloc[contract_id]
-        fair_min, fair_max = get_fair_price_range(contract)
-        status_msg = "Approved ✅" if fair_min <= bid_value <= fair_max else "Rejected ❌"
-
-        # Save bid + debug
-        with get_db() as (cur, conn):
-            cur.execute("""
-            INSERT INTO bids (
-                contract_id, user_id, company_name, cac_number, email, phone,
-                bid_amount, equipment_list, workforce, status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """, (
-                contract_id, user_id, company_name, cac_number, email, phone,
-                bid_value, equipment_list, workforce, status_msg
-            ))
-            bid_id_result = cur.fetchone()
-            bid_id = bid_id_result[0] if bid_id_result else None
-
-            # Explicit commit (redundant in context manager but helps visibility)
-            conn.commit()
-
-            # ── DEBUG PRINT ────────────────────────────────
-            print(f"[DEBUG submit_bid] INSERTED bid_id={bid_id} | contract_id={contract_id} | company='{company_name}' | amount={bid_value} | status={status_msg}")
-
-        # Email notification
-        email_ok = send_bid_notification(
-            email, company_name, contract.get("project_name", "Unknown contract"), status_msg, bid_value
-        )
-
-        color = "#10b981" if "Approved" in status_msg else "#ef4444"
-        email_msg = (
-            "<p style='color:#10b981;font-weight:600;'>📧 Confirmation email sent!</p>"
-            if email_ok else
-            "<p style='color:#f59e0b;'>⚠️ Bid saved (email failed)</p>"
-        )
-
-        # Success page
-        return HTMLResponse(f"""
-        <div style="max-width:750px;margin:40px auto;padding:40px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 30px rgba(16,185,129,0.25);">
-            <h1 style="color:#065f46;font-size:2.2rem;margin-bottom:0.5rem;">🎉 BID SUBMITTED SUCCESSFULLY</h1>
-            <p style="color:#0f766e;font-size:1.2rem;margin-bottom:2rem;">Your bid has been recorded (ID: {bid_id})</p>
-            <!-- rest of your success HTML remains the same -->
-            ...
-        </div>
-        """)
-
-    except HTTPException:
-        return RedirectResponse(url="/login", status_code=303)
-    except Exception as e:
-        print(f"[ERROR submit_bid] {type(e).__name__}: {str(e)}")
-        return HTMLResponse(f"""
-        <div style="max-width:650px;margin:50px auto;padding:30px;background:#fef2f2;border:3px solid #ef4444;border-radius:16px;text-align:center;">
-            <h1 style="color:#991b1b;">Submission Failed</h1>
-            <p>{str(e)[:240]}</p>
-            <a href="/contracts" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;">← Back</a>
-        </div>
-        """, status_code=500)
-# ── Contract detail & bid submission ─────────────
-# main.py
-# ... (keep all the imports, config, database setup, helpers, email function exactly as they were)
-
-# ── Contracts list ───────────────────────────────
-
-@app.get("/contracts", response_class=HTMLResponse)
-def contracts(request: Request):
-    try:
-        user_id = get_current_user(request)
-
-        with get_db() as (cur, _):
-            cur.execute("SELECT company_name FROM users WHERE id = %s", (user_id,))
-            company_row = cur.fetchone()
-            if not company_row:
-                return RedirectResponse(url="/login", status_code=303)
-            company_name = company_row[0].strip()  # .strip() helps avoid trailing spaces issues
-
-            # Debug output – visible in Render logs
             print(f"[DEBUG /contracts] user_id={user_id} | company_name='{company_name}'")
 
             cur.execute("SELECT contract_id FROM bids WHERE company_name = %s", (company_name,))
@@ -500,6 +352,22 @@ def contracts(request: Request):
         print(f"Contracts route error: {type(e).__name__}: {str(e)}")
         return RedirectResponse(url="/login", status_code=303)
 
+# ── Contract detail ──────────────────────────────
+
+@app.get("/contracts/{contract_id}", response_class=HTMLResponse)
+def contract_detail(request: Request, contract_id: int):
+    try:
+        get_current_user(request)  # auth check
+        if contract_id < 0 or contract_id >= len(df_bidding):
+            raise HTTPException(404)
+        row = df_bidding.iloc[contract_id]
+        return templates.TemplateResponse("contract_detail.html", {
+            "request": request,
+            "contract": row.to_dict(),
+            "contract_id": contract_id
+        })
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
 
 # ── Bid submission ─────────────────────────────────
 
@@ -518,7 +386,7 @@ async def submit_bid(
     try:
         user_id = get_current_user(request)
 
-        # Use database values for logged-in user (override form values)
+        # Logged-in user → override form with DB values
         with get_db() as (cur, conn):
             cur.execute(
                 "SELECT company_name, cac_number, email FROM users WHERE id = %s",
@@ -562,17 +430,21 @@ async def submit_bid(
 
             conn.commit()
 
-            # Important debug output – will appear in Render logs
             print(f"[DEBUG submit_bid] INSERTED → bid_id={bid_id} | contract={contract_id} | company='{company_name}' | amount={bid_value} | status={status_msg}")
 
-        # Email
+        # Email notification
         email_ok = send_bid_notification(
-            email, company_name, contract.get("project_name", "Unknown"), status_msg, bid_value
+            email, company_name, contract.get("project_name", "Unknown contract"), status_msg, bid_value
         )
 
         color = "#10b981" if "Approved" in status_msg else "#ef4444"
-        email_msg = "<p style='color:#10b981;font-weight:600;'>📧 Confirmation email sent!</p>" if email_ok else "<p style='color:#f59e0b;'>⚠️ Bid saved (email failed)</p>"
+        email_msg = (
+            "<p style='color:#10b981;font-weight:600;'>📧 Confirmation email sent!</p>"
+            if email_ok else
+            "<p style='color:#f59e0b;'>⚠️ Bid saved (email failed)</p>"
+        )
 
+        # Success page
         return HTMLResponse(f"""
         <div style="max-width:750px;margin:40px auto;padding:40px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 30px rgba(16,185,129,0.25);">
             <h1 style="color:#065f46;font-size:2.2rem;margin-bottom:0.5rem;">🎉 BID SUBMITTED SUCCESSFULLY</h1>
@@ -609,121 +481,6 @@ async def submit_bid(
         </div>
         """, status_code=500)
 
-
-# Keep the debug endpoint if you want it (optional – good for testing)
-@app.get("/debug/bids")
-def debug_bids():
-    with get_db() as (cur, _):
-        cur.execute("SELECT id, contract_id, company_name, bid_amount, status FROM bids ORDER BY id DESC LIMIT 5")
-        rows = cur.fetchall()
-    return {"recent_bids": [dict(zip(["id", "contract_id", "company_name", "bid_amount", "status"], row)) for row in rows]}
-
-     
-
-@app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
-async def submit_bid(
-    request: Request,
-    contract_id: int,
-    company_name: str = Form(...),
-    cac_number: str = Form(...),
-    email: str = Form(...),
-    phone: str = Form(...),
-    bid_amount: str = Form(...),
-    equipment_list: str = Form(...),
-    workforce: str = Form(...)
-):
-    try:
-        user_id = get_current_user(request)
-
-        # Logged-in user → override form with DB values
-        with get_db() as (cur, _):
-            cur.execute(
-                "SELECT company_name, cac_number, email FROM users WHERE id = %s",
-                (user_id,)
-            )
-            row = cur.fetchone()
-            if row:
-                company_name, cac_number, email = row
-
-        # Parse bid
-        try:
-            clean = bid_amount.replace(",", "").strip()
-            bid_value = float(clean)
-        except ValueError:
-            return HTMLResponse("""
-            <div style="max-width:650px;margin:50px auto;padding:30px;background:#fef2f2;border:3px solid #ef4444;border-radius:16px;text-align:center;">
-                <h1 style="color:#991b1b;">Invalid Bid Amount</h1>
-                <p>Please enter a valid number (e.g. 12.5 or 12,500,000,000)</p>
-                <a href="/contracts" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;">← Back</a>
-            </div>
-            """, status_code=400)
-
-        contract = df_bidding.iloc[contract_id]
-        fair_min, fair_max = get_fair_price_range(contract)
-        status_msg = "Approved ✅" if fair_min <= bid_value <= fair_max else "Rejected ❌"
-
-        # Save bid
-        with get_db() as (cur, _):
-            cur.execute("""
-            INSERT INTO bids (
-                contract_id, user_id, company_name, cac_number, email, phone,
-                bid_amount, equipment_list, workforce, status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """, (
-                contract_id, user_id, company_name, cac_number, email, phone,
-                bid_value, equipment_list, workforce, status_msg
-            ))
-            bid_id = cur.fetchone()[0]
-
-        # Email
-        email_ok = send_bid_notification(
-            email, company_name, contract["project_name"], status_msg, bid_value
-        )
-
-        color = "#10b981" if "Approved" in status_msg else "#ef4444"
-        email_msg = "<p style='color:#10b981;font-weight:600;'>📧 Confirmation email sent!</p>" if email_ok else "<p style='color:#f59e0b;'>⚠️ Bid saved (email failed)</p>"
-
-        return HTMLResponse(f"""
-        <div style="max-width:750px;margin:40px auto;padding:40px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 30px rgba(16,185,129,0.25);">
-            <h1 style="color:#065f46;font-size:2.2rem;margin-bottom:0.5rem;">🎉 BID SUBMITTED SUCCESSFULLY</h1>
-            <p style="color:#0f766e;font-size:1.2rem;margin-bottom:2rem;">Your bid has been recorded</p>
-
-            <div style="background:white;padding:1.8rem;border-radius:16px;margin:1.5rem 0;box-shadow:0 4px 12px rgba(0,0,0,0.08);text-align:left;">
-                <p><strong>Contract:</strong> {contract['project_name']}</p>
-                <p><strong>Company:</strong> {company_name}</p>
-                <p><strong>CAC:</strong> {cac_number}</p>
-                <p><strong>Bid Amount:</strong> <span style="font-size:1.4rem;font-weight:bold;color:#065f46;">₦{bid_value:,.2f} Billion</span></p>
-                <p style="font-weight:bold;color:{color};">AI Assessment: {status_msg}</p>
-                <div style="margin-top:1rem;padding:0.8rem;background:#f0fdf4;border-left:4px solid #10b981;border-radius:8px;">
-                    Bid ID: {bid_id} • Submitted: {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}
-                </div>
-            </div>
-
-            {email_msg}
-
-            <a href="/contracts" style="display:inline-block;margin-top:1.5rem;padding:14px 40px;background:#1e40af;color:white;border-radius:12px;font-weight:700;text-decoration:none;box-shadow:0 4px 12px rgba(30,64,175,0.3);">
-                View Remaining Contracts
-            </a>
-        </div>
-        """)
-
-    except HTTPException:
-        return RedirectResponse(url="/login", status_code=303)
-    except Exception as e:
-        print(f"Bid submission failed: {e}")
-        return HTMLResponse(f"""
-        <div style="max-width:650px;margin:50px auto;padding:30px;background:#fef2f2;border:3px solid #ef4444;border-radius:16px;text-align:center;">
-            <h1 style="color:#991b1b;">Submission Failed</h1>
-            <p>{str(e)[:180]}</p>
-            <a href="/contracts" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;">← Back</a>
-        </div>
-        """, status_code=500)
-with get_db() as (cur, conn):
-    cur.execute("...")
-    bid_id = cur.fetchone()[0]
-    print(f"DEBUG: Bid inserted with ID {bid_id} for contract {contract_id} by {company_name}")
-    conn.commit()  # make sure this is inside the context (already is in your version)
 # ── Admin ────────────────────────────────────────
 
 @app.get("/admin/login", response_class=HTMLResponse)
@@ -915,17 +672,17 @@ def admin_dashboard(request: Request):
         print(f"Dashboard error: {e}")
         return HTMLResponse("<h2 style='color:red;text-align:center;'>Error loading dashboard</h2>")
 
-# ────────────────────────────────────────────────
+# ── Debug endpoint ───────────────────────────────
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 @app.get("/debug/bids")
 def debug_bids():
     with get_db() as (cur, _):
         cur.execute("SELECT id, contract_id, company_name, bid_amount, status FROM bids ORDER BY id DESC LIMIT 5")
         rows = cur.fetchall()
-    return {"recent_bids": [dict(row) for row in rows]}
+    return {"recent_bids": [dict(zip(["id", "contract_id", "company_name", "bid_amount", "status"], row)) for row in rows]}
 
+# ────────────────────────────────────────────────
 
-
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
