@@ -48,12 +48,17 @@ df_bidding = pd.read_csv(BIDDING_CONTRACTS_URL).reset_index(drop=True)
 model = joblib.load(MODEL_PATH)
 
 # ===== DATABASE SETUP =====
-conn = sqlite3.connect("bids.db", check_same_thread=False)
+import psycopg2
+import os
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     hashed_password TEXT NOT NULL,
     company_name TEXT NOT NULL,
@@ -63,7 +68,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS bids (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     contract_id INTEGER NOT NULL,  -- STORES INTEGER INDEX FROM DATAFRAME
     user_id INTEGER,
     company_name TEXT NOT NULL,
@@ -80,7 +85,7 @@ CREATE TABLE IF NOT EXISTS bids (
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS admins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
     hashed_password TEXT NOT NULL
 )
@@ -88,7 +93,7 @@ CREATE TABLE IF NOT EXISTS admins (
 
 try:
     cursor.execute(
-        "INSERT INTO admins (username, hashed_password) VALUES (?, ?)",
+        "INSERT INTO admins (username, hashed_password) VALUES (%, %)",
         ("admin", hashlib.sha256("admin123".encode()).hexdigest())
     )
     conn.commit()
@@ -195,7 +200,7 @@ async def register_user(
     try:
         hashed = hashlib.sha256(password.encode()).hexdigest()
         cursor.execute(
-            "INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (?, ?, ?, ?)", 
+            "INSERT INTO users (company_name, cac_number, email, hashed_password) VALUES (%, %, %, %)", 
             (company_name, cac_number, email, hashed)
         )
         conn.commit()
@@ -314,7 +319,7 @@ async def submit_bid(
         # If user is logged in, always use company data from DB
         if user_id is not None:
             cursor.execute(
-                "SELECT company_name, cac_number, email FROM users WHERE id = ?",
+                "SELECT company_name, cac_number, email FROM users WHERE id = %",
                 (user_id,)
             )
             user_row = cursor.fetchone()
@@ -347,7 +352,7 @@ async def submit_bid(
         # Save bid
         cursor.execute("""
         INSERT INTO bids (contract_id, user_id, company_name, cac_number, email, phone, bid_amount, equipment_list, workforce, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%, %, %, %, %, %, %, %, %, %)
         """, (contract_id, user_id, company_name, cac_number, email, phone, bid_amount_value, equipment_list, workforce, status_msg))
         conn.commit()
         
@@ -652,3 +657,4 @@ def admin_dashboard(request: Request):
         return HTMLResponse(content=admin_html)
     except HTTPException:
         return RedirectResponse(url="/admin/login", status_code=303)
+
