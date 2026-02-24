@@ -664,4 +664,10 @@ def admin_dashboard(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/debug/bids")
+def debug_bids():
+    with get_db() as (cur, _):
+        cur.execute("SELECT id, contract_id, company_name, bid_amount, status FROM bids ORDER BY id DESC LIMIT 5")
+        rows = cur.fetchall()
+    return {"recent_bids": [dict(row) for row in rows]}
 
