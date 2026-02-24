@@ -463,7 +463,11 @@ async def submit_bid(
             <a href="/contracts" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;">← Back</a>
         </div>
         """, status_code=500)
-
+with get_db() as (cur, conn):
+    cur.execute("...")
+    bid_id = cur.fetchone()[0]
+    print(f"DEBUG: Bid inserted with ID {bid_id} for contract {contract_id} by {company_name}")
+    conn.commit()  # make sure this is inside the context (already is in your version)
 # ── Admin ────────────────────────────────────────
 
 @app.get("/admin/login", response_class=HTMLResponse)
@@ -660,3 +664,4 @@ def admin_dashboard(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
