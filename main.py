@@ -242,8 +242,21 @@ def contracts(request: Request):
                 available.append(contract_with_range)
 
         if not available:
-            # (keep as is)
+            return HTMLResponse("""
+            <div style="max-width:700px;margin:50px auto;background:white;border-radius:16px;padding:40px;text-align:center;box-shadow:0 5px 20px rgba(0,0,0,0.1)">
+                <div style="font-size:64px;margin-bottom:20px">✅</div>
+                <h2 style="color:#1e40af;margin-bottom:15px">All Contracts Bid Successfully!</h2>
+                <p style="color:#475569;font-size:18px;margin-bottom:25px">
+                    Your company has submitted bids for all available contracts.<br>
+                    Administrators will review your submissions shortly.
+                </p>
+                <a href="/logout" style="display:inline-block;padding:12px 30px;background:#ef4444;color:white;text-decoration:none;border-radius:8px;font-weight:600">
+                    Logout
+                </a>
+            </div>
+            """)
 
+        # This block must be indented (it's the else case)
         return templates.TemplateResponse("contracts_fragment.html", {
             "request": request,
             "contracts": available,
@@ -255,8 +268,6 @@ def contracts(request: Request):
     except Exception as e:
         print(f"Contracts route error: {type(e).__name__}: {str(e)}")
         return RedirectResponse(url="/login", status_code=303)
-
-# (keep contract_detail as is)
 
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
@@ -556,3 +567,4 @@ def debug_bids():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
