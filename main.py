@@ -324,7 +324,22 @@ async def submit_bid(
             <h1 style="color:#065f46;font-size:2.2rem;margin-bottom:0.5rem;">🎉 BID SUBMITTED SUCCESSFULLY</h1>
             <p style="color:#0f766e;font-size:1.2rem;margin-bottom:2rem;">Your bid for "{contract.get('project_name', 'N/A')}" has been recorded (ID: {bid_id})</p>
 
-            <!-- rest of success HTML as is -->
+            <div style="background:white;padding:1.8rem;border-radius:16px;margin:1.5rem 0;box-shadow:0 4px 12px rgba(0,0,0,0.08);text-align:left;">
+                <p><strong>Contract:</strong> {contract.get('project_name', 'N/A')}</p>
+                <p><strong>Company:</strong> {company_name}</p>
+                <p><strong>CAC:</strong> {cac_number}</p>
+                <p><strong>Bid Amount:</strong> <span style="font-size:1.4rem;font-weight:bold;color:#065f46;">₦{bid_value:,.2f} Billion</span></p>
+                <p style="font-weight:bold;color:{color};">AI Assessment: {status_msg}</p>
+                <div style="margin-top:1rem;padding:0.8rem;background:#f0fdf4;border-left:4px solid #10b981;border-radius:8px;">
+                    Bid ID: {bid_id} • Submitted: {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}
+                </div>
+            </div>
+
+            {email_msg}
+
+            <a href="/contracts" style="display:inline-block;margin-top:1.5rem;padding:14px 40px;background:#1e40af;color:white;border-radius:12px;font-weight:700;text-decoration:none;box-shadow:0 4px 12px rgba(30,64,175,0.3);">
+                View Remaining Contracts
+            </a>
         </div>
         """)
 
@@ -366,7 +381,7 @@ async def admin_reject_bid(bid_id: int, comments: str = Form(None)):
         print(f"[ERROR admin_reject] {e}")
         return RedirectResponse(url="/admin/dashboard", status_code=303)
 
-# ── Admin dashboard (updated with approve/reject) ──
+# ── Admin dashboard ──────────────────────────────
 
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
@@ -426,37 +441,118 @@ def admin_dashboard(request: Request):
         unfair_count = total - fair_count
         total_value = sum(x["bid_amount"] for x in enhanced)
 
-        # ── HTML with approve/reject buttons ── (add to table rows)
+        # ── HTML ───────────────────────────────────── (kept similar structure)
 
-        # (keep existing HTML, but update tbody loop to include forms)
-        for b in enhanced:
-            html += f"""
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>AISEC Admin Dashboard</title>
+    <style>
+        :root {{ --p:#2563eb; --s:#10b981; --w:#f59e0b; --d:#ef4444; }}
+        body {{ font-family:'Segoe UI',sans-serif; background:#f8fafc; margin:0; }}
+        .header {{ background:linear-gradient(135deg,#1e40af,#0c4a6e); color:white; padding:1.2rem 3rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.2); }}
+        .container {{ max-width:1800px; margin:2rem auto; padding:0 1.5rem; }}
+        .stats {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1.5rem; margin-bottom:2.5rem; }}
+        .card {{ background:white; border-radius:16px; padding:1.8rem; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,0.08); border-top:5px solid var(--p); transition:transform 0.2s; }}
+        .card:hover {{ transform:translateY(-6px); }}
+        .big {{ font-size:3.2rem; font-weight:800; background:linear-gradient(90deg,var(--p),#0ea5e9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }}
+        table {{ width:100%; border-collapse:collapse; background:white; border-radius:16px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.1); }}
+        th {{ background:#f1f5f9; padding:1.1rem; text-align:left; font-weight:700; color:#1e40af; position:sticky; top:70px; z-index:10; }}
+        td {{ padding:1rem; border-bottom:1px solid #f1f5f9; }}
+        tr:hover {{ background:#f8fafc; }}
+        .fair {{ background:#f0fdf4; border-left:5px solid var(--s); }}
+        .unfair {{ background:#fff7ed; border-left:5px solid var(--w); }}
+        .approved {{ color:var(--s); font-weight:700; }}
+        .rejected {{ color:var(--d); font-weight:700; }}
+    </style>
+</head>
+<body>
+<div class="header">
+    <div style="font-size:1.6rem;font-weight:800;">🛡️ AISEC Admin Dashboard</div>
+    <a href="/admin/logout" style="padding:0.7rem 1.6rem;background:var(--d);color:white;border-radius:10px;text-decoration:none;font-weight:600;">Logout</a>
+</div>
+
+<div class="container">
+<h1 style="color:#0f172a;margin:2rem 0 1.5rem;font-size:2.4rem;">Bid Overview & AI Fairness Check</h1>
+
+<div class="stats">
+    <div class="card"><div class="big">{total}</div><div>Total Bids</div></div>
+    <div class="card" style="border-top-color:var(--s);"><div class="big">{fair_count}</div><div>Fair (Approved)</div></div>
+    <div class="card" style="border-top-color:var(--w);"><div class="big">{unfair_count}</div><div>Flagged (High)</div></div>
+    <div class="card" style="border-top-color:#0ea5e9;"><div class="big">₦{total_value:,.2f}B</div><div>Total Value</div></div>
+</div>
+
+<table>
+<thead><tr>
+    <th>Bid ID</th>
+    <th>Contract</th>
+    <th>Company / CAC</th>
+    <th>Contact</th>
+    <th>Bid (₦B)</th>
+    <th>AI Fair Range (₦B)</th>
+    <th>Assessment</th>
+    <th>Status</th>
+    <th>Time</th>
+    <th>Admin Status</th>
+    <th>Comments</th>
+    <th>Action</th>
+</tr></thead>
+<tbody>
+"""
+
+        if not enhanced:
+            html += '<tr><td colspan="12" style="text-align:center;padding:3rem;color:#64748b;">No bids yet</td></tr>'
+        else:
+            for b in enhanced:
+                cls = "fair" if b["is_fair"] else "unfair"
+                range_cls = "approved" if b["is_fair"] else "rejected"
+                html += f"""
                 <tr class="{cls}">
-                    ...
+                    <td>{b["bid_id"]}</td>
+                    <td>{b["contract_name"]}</td>
+                    <td>{b["company_name"]}<br><small style="color:#6b7280;">{b["cac_number"]}</small></td>
+                    <td>{b["email"]}<br><small style="color:#6b7280;">{b["phone"]}</small></td>
+                    <td>₦{b["bid_amount"]:,.2f}B</td>
+                    <td class="{range_cls}">₦{b["fair_min"]:,.2f} – ₦{b["fair_max"]:,.2f}B</td>
+                    <td class="{'approved' if b['is_fair'] else 'rejected'}">{'Within range' if b['is_fair'] else 'High'}</td>
+                    <td>{b["status"]}</td>
+                    <td><small>{b["timestamp"]}</small></td>
                     <td>{b["admin_status"]}</td>
                     <td>{b["comments"]}</td>
                     <td>
                         <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
-                            <textarea name="comments" placeholder="Comments"></textarea>
-                            <button type="submit">Approve ✅</button>
+                            <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
+                            <button type="submit" style="background:green;color:white;padding:5px;">Approve ✅</button>
                         </form>
                         <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
-                            <textarea name="comments" placeholder="Comments"></textarea>
-                            <button type="submit">Reject ❌</button>
+                            <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
+                            <button type="submit" style="background:red;color:white;padding:5px;">Reject ❌</button>
                         </form>
                     </td>
                 </tr>
                 """
 
-        # (keep rest of dashboard HTML)
+        html += "</tbody></table></div></body></html>"
 
+        return HTMLResponse(html)
+
+    except HTTPException:
+        return RedirectResponse(url="/admin/login", status_code=303)
     except Exception as e:
         print(f"Dashboard error: {e}")
         return HTMLResponse("<h2 style='color:red;text-align:center;'>Error loading dashboard</h2>")
+
+# ── Debug endpoint ───────────────────────────────
+
+@app.get("/debug/bids")
+def debug_bids():
+    with get_db() as (cur, _):
+        cur.execute("SELECT id, contract_id, company_name, bid_amount, status FROM bids ORDER BY id DESC LIMIT 5")
+        rows = cur.fetchall()
+    return {"recent_bids": [dict(zip(["id", "contract_id", "company_name", "bid_amount", "status"], row)) for row in rows]}
 
 # ────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-</xai:function_call>
