@@ -138,19 +138,13 @@ model = joblib.load(MODEL_PATH)
 #  HELPERS
 # ────────────────────────────────────────────────
 
-def adjust_for_inflation(base_price, inflation_rate=0.2, years=1):  # Updated to 20% for 2026
+def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
     return base_price * ((1 + inflation_rate) ** years)
 
-def parse_primary_state(project_name):
-    words = re.findall(r'\w+', project_name)
-    if len(words) > 1:
-        return words[0]  # e.g. 'Sokoto' from 'Sokoto Katsina road'
-    return 'Unknown'
-
 def get_fair_price_range(contract_row):
-    contract_row = contract_row.copy()
+    contract_row = contract_row.copy()  # Avoid modifying original
     contract_row['award_year'] = 2026
-    contract_row['award_month'] = 2
+    contract_row['award_month'] = 2  # February
     contract_row['primary_state'] = parse_primary_state(contract_row.get('project_name', ''))
     contract_row['latitude_start'] = contract_row.get('latitude', 0)
     contract_row['longitude_start'] = contract_row.get('longitude', 0)
@@ -206,6 +200,7 @@ def get_fair_price_range(contract_row):
 
     adjusted = adjust_for_inflation(base_price)
     return adjusted * 0.9, adjusted * 1.1
+
 def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     sessions[token] = user_id
@@ -235,7 +230,7 @@ def send_bid_notification(email: str, company_name: str, contract_name: str, sta
         EMAIL_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")           # ← use env var!
 
         if not EMAIL_PASSWORD:
-            raise ValueError("EMAIL_APP_PASSWORD not set")
+            raise ValueValue("EMAIL_APP_PASSWORD not set")
 
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -697,6 +692,23 @@ def admin_dashboard(request: Request):
             for b in enhanced:
                 cls = "fair" if b["is_fair"] else "unfair"
                 range_cls = "approved" if b["is_fair"] else "rejected"
+                admin_status_cap = b["admin_status"].capitalize()
+                comments_or_none = b["comments"] or "None"
+                action_html = f"""
+                Already {admin_status_cap}
+                """
+                if b["admin_status"] == "pending":
+                    action_html = f"""
+                    <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
+                        <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
+                        <button type="submit" style="background:green;color:white;padding:5px;">Approve ✅</button>
+                    </form>
+                    <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
+                        <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
+                        <button type="submit" style="background:red;color:white;padding:5px;">Reject ❌</button>
+                    </form>
+                    """
+
                 html += f"""
                 <tr class="{cls}">
                     <td>{b["bid_id"]}</td>
@@ -708,18 +720,9 @@ def admin_dashboard(request: Request):
                     <td class="{'approved' if b['is_fair'] else 'rejected'}">{'Within range' if b['is_fair'] else 'High'}</td>
                     <td>{b["status"]}</td>
                     <td><small>{b["timestamp"]}</small></td>
-                    <td>{b["admin_status"]}</td>
-                    <td>{b["comments"]}</td>
-                    <td>
-                        <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
-                            <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
-                            <button type="submit" style="background:green;color:white;padding:5px;">Approve ✅</button>
-                        </form>
-                        <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
-                            <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
-                            <button type="submit" style="background:red;color:white;padding:5px;">Reject ❌</button>
-                        </form>
-                    </td>
+                    <td>{admin_status_cap}</td>
+                    <td>{comments_or_none}</td>
+                    <td>{action_html}</td>
                 </tr>
                 """
 
@@ -732,25 +735,6 @@ def admin_dashboard(request: Request):
     except Exception as e:
         print(f"Dashboard error: {e}")
         return HTMLResponse("<h2 style='color:red;text-align:center;'>Error loading dashboard</h2>")
-        <th>Admin Status</th>
-<th>Comments</th>
-<th>Action</th>
-<td>{b["admin_status"].capitalize()}</td>
-<td>{b["comments"] or "None"}</td>
-<td>
-    {% if b["admin_status"] == "pending" %}
-    <form method="POST" action="/admin/bids/{{ b["bid_id"] }}/approve">
-        <textarea name="comments" placeholder="Comments" style="width:100%;height:50px;"></textarea>
-        <button type="submit" style="background:green;color:white;padding:5px;">Approve ✅</button>
-    </form>
-    <form method="POST" action="/admin/bids/{{ b["bid_id"] }}/reject">
-        <textarea name="comments" placeholder="Comments" style="width:100%;height:50px;"></textarea>
-        <button type="submit" style="background:red;color:white;padding:5px;">Reject ❌</button>
-    </form>
-    {% else %}
-    Already {b["admin_status"]}
-    {% endif %}
-</td>
 
 # ── Debug endpoint ───────────────────────────────
 
@@ -766,4 +750,3 @@ def debug_bids():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
