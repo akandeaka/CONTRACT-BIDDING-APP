@@ -137,9 +137,19 @@ model = joblib.load(MODEL_PATH)
 # ────────────────────────────────────────────────
 #  HELPERS
 # ────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+#  HELPERS
+# ────────────────────────────────────────────────
 
-def adjust_for_inflation(base_price, inflation_rate=0.12, years=2):
+def adjust_for_inflation(base_price, inflation_rate=0.2, years=1):
     return base_price * ((1 + inflation_rate) ** years)
+
+# This must come BEFORE get_fair_price_range
+def parse_primary_state(project_name):
+    words = re.findall(r'\w+', project_name)
+    if len(words) > 1:
+        return words[0]  # e.g. 'Sokoto' from 'Sokoto Katsina road'
+    return 'Unknown'
 
 def get_fair_price_range(contract_row):
     contract_row = contract_row.copy()  # Avoid modifying original
@@ -148,6 +158,59 @@ def get_fair_price_range(contract_row):
     contract_row['primary_state'] = parse_primary_state(contract_row.get('project_name', ''))
     contract_row['latitude_start'] = contract_row.get('latitude', 0)
     contract_row['longitude_start'] = contract_row.get('longitude', 0)
+
+    # Convert range strings like '500-700' to average float
+    def parse_range(val):
+        if pd.isna(val) or val == '':
+            return 0.0
+        if isinstance(val, str) and '-' in val:
+            try:
+                low, high = map(float, val.split('-'))
+                return (low + high) / 2
+            except:
+                return 0.0
+        try:
+            return float(val)
+        except:
+            return 0.0
+
+    # Apply to all potential numeric columns
+    numeric_cols = [
+        "estimated_length_km", "rainfall_mm_per_year", "elevation_m",
+        "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
+        "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
+    ]
+    for col in numeric_cols:
+        if col in contract_row.index:
+            contract_row[col] = parse_range(contract_row[col])
+
+    feature_columns = [
+        "award_year", "award_month", "primary_state", "geopolitical_zone",
+        "latitude_start", "longitude_start", "estimated_length_km",
+        "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
+        "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
+        "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
+        "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
+    ]
+
+    available = [col for col in feature_columns if col in contract_row.index]
+
+    if not available:
+        print("[WARNING] No model features available → fallback range")
+        return 0, 0
+
+    features = contract_row[available]
+    features_df = pd.DataFrame([features.values], columns=features.index)
+
+    try:
+        base_price = model.predict(features_df)[0]
+    except Exception as e:
+        print(f"[ERROR] Model predict failed: {e}")
+        base_price = 0
+
+    adjusted = adjust_for_inflation(base_price)
+    return adjusted * 0.9, adjusted * 1.1
+
 
     # Convert range strings like '500-700' to average float
     def parse_range(val):
@@ -750,3 +813,4 @@ def debug_bids():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
