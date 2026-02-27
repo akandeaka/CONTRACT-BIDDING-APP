@@ -148,12 +148,37 @@ def parse_primary_state(project_name):
     return 'Unknown'
 
 def get_fair_price_range(contract_row):
-    contract_row = contract_row.copy()  # Avoid modifying original
+    contract_row = contract_row.copy()
     contract_row['award_year'] = 2026
-    contract_row['award_month'] = 2  # February
+    contract_row['award_month'] = 2
     contract_row['primary_state'] = parse_primary_state(contract_row.get('project_name', ''))
     contract_row['latitude_start'] = contract_row.get('latitude', 0)
     contract_row['longitude_start'] = contract_row.get('longitude', 0)
+
+    # Convert range strings like '500-700' to average float
+    def parse_range(val):
+        if pd.isna(val) or val == '':
+            return 0.0
+        if isinstance(val, str) and '-' in val:
+            try:
+                low, high = map(float, val.split('-'))
+                return (low + high) / 2
+            except:
+                return 0.0
+        try:
+            return float(val)
+        except:
+            return 0.0
+
+    # Apply to all potential numeric columns
+    numeric_cols = [
+        "estimated_length_km", "rainfall_mm_per_year", "elevation_m",
+        "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
+        "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
+    ]
+    for col in numeric_cols:
+        if col in contract_row.index:
+            contract_row[col] = parse_range(contract_row[col])
 
     feature_columns = [
         "award_year", "award_month", "primary_state", "geopolitical_zone",
@@ -181,7 +206,6 @@ def get_fair_price_range(contract_row):
 
     adjusted = adjust_for_inflation(base_price)
     return adjusted * 0.9, adjusted * 1.1
-
 def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     sessions[token] = user_id
@@ -708,6 +732,25 @@ def admin_dashboard(request: Request):
     except Exception as e:
         print(f"Dashboard error: {e}")
         return HTMLResponse("<h2 style='color:red;text-align:center;'>Error loading dashboard</h2>")
+        <th>Admin Status</th>
+<th>Comments</th>
+<th>Action</th>
+<td>{b["admin_status"].capitalize()}</td>
+<td>{b["comments"] or "None"}</td>
+<td>
+    {% if b["admin_status"] == "pending" %}
+    <form method="POST" action="/admin/bids/{{ b["bid_id"] }}/approve">
+        <textarea name="comments" placeholder="Comments" style="width:100%;height:50px;"></textarea>
+        <button type="submit" style="background:green;color:white;padding:5px;">Approve ✅</button>
+    </form>
+    <form method="POST" action="/admin/bids/{{ b["bid_id"] }}/reject">
+        <textarea name="comments" placeholder="Comments" style="width:100%;height:50px;"></textarea>
+        <button type="submit" style="background:red;color:white;padding:5px;">Reject ❌</button>
+    </form>
+    {% else %}
+    Already {b["admin_status"]}
+    {% endif %}
+</td>
 
 # ── Debug endpoint ───────────────────────────────
 
@@ -723,3 +766,4 @@ def debug_bids():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
