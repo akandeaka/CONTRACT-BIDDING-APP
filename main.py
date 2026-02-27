@@ -203,13 +203,133 @@ def get_admin_user(request: Request) -> int:
 #  EMAIL
 # ────────────────────────────────────────────────
 
-# (keep as is)
+def send_bid_notification(email: str, company_name: str, contract_name: str, status: str, bid_amount: float):
+    try:
+        EMAIL_HOST = "smtp.gmail.com"
+        EMAIL_PORT = 587
+        EMAIL_USER = "aisec2025.notifications@gmail.com"           # ← CHANGE
+        EMAIL_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")           # ← use env var!
+
+        if not EMAIL_PASSWORD:
+            raise ValueError("EMAIL_APP_PASSWORD not set")
+
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_USER
+        msg['To'] = email
+        msg['Subject'] = f"AISEC Bid Submission - {status}"
+
+        body = f"""Dear {company_name},
+
+Your bid for "{contract_name}" has been successfully submitted!
+
+Bid Amount: ₦{bid_amount:,.2f} Billion
+Status: {status}
+
+You can log in to your AISEC dashboard to view more details.
+
+Thank you for using AISEC - AI for Secure and Efficient Contracting.
+
+Best regards,
+AISEC Team"""
+
+        msg.attach(MIMEText(body, 'plain'))
+
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_USER, EMAIL_PASSWORD)
+            server.send_message(msg)
+
+        print(f"Email sent to {email}")
+        return True
+    except Exception as e:
+        print(f"Email failed: {e}")
+        return False
 
 # ────────────────────────────────────────────────
 #  ROUTES
 # ────────────────────────────────────────────────
 
-# (keep home, register, login, logout as is)
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    return RedirectResponse(url="/contracts")
+
+# ── Register ─────────────────────────────────────
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_user(
+    company_name: str = Form(...),
+    cac_number: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...)
+):
+    hashed = hashlib.sha256(password.encode()).hexdigest()
+
+    try:
+        with get_db() as (cur, _):
+            cur.execute(
+                """
+                INSERT INTO users (company_name, cac_number, email, hashed_password)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (company_name, cac_number, email, hashed)
+            )
+        return HTMLResponse("""
+        <h2 style="color:green;text-align:center;">✅ Registration successful!</h2>
+        <p style="text-align:center;"><a href="/login">Login here</a></p>
+        """)
+    except psycopg2.IntegrityError:
+        return HTMLResponse("""
+        <h2 style="color:red;text-align:center;">❌ Email already registered</h2>
+        <p style="text-align:center;"><a href="/login">Login here</a></p>
+        """, status_code=400)
+    except Exception as e:
+        print(f"Register error: {e}")
+        return HTMLResponse("<h2 style='color:red;'>Server error</h2>", status_code=500)
+
+# ── Login ────────────────────────────────────────
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_user(response: Response, email: str = Form(...), password: str = Form(...)):
+    hashed = hashlib.sha256(password.encode()).hexdigest()
+
+    try:
+        with get_db() as (cur, _):
+            cur.execute(
+                "SELECT id FROM users WHERE email = %s AND hashed_password = %s",
+                (email, hashed)
+            )
+            user = cur.fetchone()
+
+        if user:
+            token = create_session(user[0])
+            resp = RedirectResponse(url="/contracts", status_code=303)
+            resp.set_cookie(key="session_token", value=token, httponly=True, max_age=3600*24)
+            return resp
+
+        return HTMLResponse("""
+        <h2 style="color:red;text-align:center;">❌ Invalid credentials</h2>
+        <p style="text-align:center;"><a href="/login">Try again</a></p>
+        """, status_code=401)
+
+    except Exception as e:
+        print(f"Login error: {e}")
+        return HTMLResponse("<h2 style='color:red;'>Server error</h2>", status_code=500)
+
+@app.get("/logout", response_class=HTMLResponse)
+async def logout(response: Response):
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie("session_token")
+    return resp
+
+# ── Contracts list ───────────────────────────────
 
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request):
@@ -256,7 +376,6 @@ def contracts(request: Request):
             </div>
             """)
 
-        # This block must be indented (it's the else case)
         return templates.TemplateResponse("contracts_fragment.html", {
             "request": request,
             "contracts": available,
@@ -268,6 +387,25 @@ def contracts(request: Request):
     except Exception as e:
         print(f"Contracts route error: {type(e).__name__}: {str(e)}")
         return RedirectResponse(url="/login", status_code=303)
+
+# ── Contract detail ──────────────────────────────
+
+@app.get("/contracts/{contract_id}", response_class=HTMLResponse)
+def contract_detail(request: Request, contract_id: int):
+    try:
+        get_current_user(request)  # auth check
+        if contract_id < 0 or contract_id >= len(df_bidding):
+            raise HTTPException(404)
+        row = df_bidding.iloc[contract_id]
+        return templates.TemplateResponse("contract_detail.html", {
+            "request": request,
+            "contract": row.to_dict(),
+            "contract_id": contract_id
+        })
+    except HTTPException:
+        return RedirectResponse(url="/login", status_code=303)
+
+# ── Bid submission ─────────────────────────────────
 
 @app.post("/contracts/{contract_id}/submit_bid", response_class=HTMLResponse)
 async def submit_bid(
@@ -284,6 +422,7 @@ async def submit_bid(
     try:
         user_id = get_current_user(request)
 
+        # Logged-in user → override form with DB values
         with get_db() as (cur, conn):
             cur.execute(
                 "SELECT company_name, cac_number, email FROM users WHERE id = %s",
@@ -293,8 +432,18 @@ async def submit_bid(
             if row:
                 company_name, cac_number, email = [v.strip() if isinstance(v, str) else v for v in row]
 
-        clean = bid_amount.replace(",", "").strip()
-        bid_value = float(clean)
+        # Parse bid amount
+        try:
+            clean = bid_amount.replace(",", "").strip()
+            bid_value = float(clean)
+        except ValueError:
+            return HTMLResponse("""
+            <div style="max-width:650px;margin:50px auto;padding:30px;background:#fef2f2;border:3px solid #ef4444;border-radius:16px;text-align:center;">
+                <h1 style="color:#991b1b;">Invalid Bid Amount</h1>
+                <p>Please enter a valid number (e.g. 12.5 or 12500000000)</p>
+                <a href="/contracts" style="display:inline-block;margin-top:20px;padding:12px 30px;background:#1e40af;color:white;border-radius:8px;text-decoration:none;">← Back</a>
+            </div>
+            """, status_code=400)
 
         contract = df_bidding.iloc[contract_id]
         fair_min, fair_max = get_fair_price_range(contract)
@@ -305,6 +454,7 @@ async def submit_bid(
             fair_max = bid_value * 1.3
             status_msg = "Pending Review (limited data)"
 
+        # Save bid + debug logging
         with get_db() as (cur, conn):
             cur.execute("""
             INSERT INTO bids (
@@ -323,13 +473,19 @@ async def submit_bid(
 
             print(f"[DEBUG submit_bid] INSERTED → bid_id={bid_id} | contract={contract_id} | company='{company_name}' | amount={bid_value} | status={status_msg}")
 
+        # Email notification
         email_ok = send_bid_notification(
-            email, company_name, contract.get('project_name', 'Unknown contract'), status_msg, bid_value
+            email, company_name, contract.get("project_name", "Unknown contract"), status_msg, bid_value
         )
 
         color = "#10b981" if "Approved" in status_msg else "#ef4444"
-        email_msg = "<p style='color:#10b981;font-weight:600;'>📧 Confirmation email sent!</p>" if email_ok else "<p style='color:#f59e0b;'>⚠️ Bid saved (email failed)</p>"
+        email_msg = (
+            "<p style='color:#10b981;font-weight:600;'>📧 Confirmation email sent!</p>"
+            if email_ok else
+            "<p style='color:#f59e0b;'>⚠️ Bid saved (email failed)</p>"
+        )
 
+        # Success page
         return HTMLResponse(f"""
         <div style="max-width:750px;margin:40px auto;padding:40px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:3px solid #10b981;border-radius:20px;text-align:center;box-shadow:0 10px 30px rgba(16,185,129,0.25);">
             <h1 style="color:#065f46;font-size:2.2rem;margin-bottom:0.5rem;">🎉 BID SUBMITTED SUCCESSFULLY</h1>
@@ -567,4 +723,3 @@ def debug_bids():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
