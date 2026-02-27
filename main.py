@@ -25,7 +25,9 @@ import psycopg2
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
-
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "uptime": "ok"}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -813,4 +815,5 @@ def debug_bids():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
