@@ -161,58 +161,15 @@ def get_fair_price_range(contract_row):
     contract_row['latitude_start'] = contract_row.get('latitude', 0)
     contract_row['longitude_start'] = contract_row.get('longitude', 0)
 
-    # Convert range strings like '500-700' to average float
-    def parse_range(val):
-        if pd.isna(val) or val == '':
-            return 0.0
-        if isinstance(val, str) and '-' in val:
-            try:
-                low, high = map(float, val.split('-'))
-                return (low + high) / 2
-            except:
-                return 0.0
-        try:
-            return float(val)
-        except:
-            return 0.0
-
-    # Apply to all potential numeric columns
-    numeric_cols = [
-        "estimated_length_km", "rainfall_mm_per_year", "elevation_m",
-        "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
-        "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
-    ]
-    for col in numeric_cols:
+    # Convert 'Yes'/'No' to 1/0
+    bool_cols = ["has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp"]
+    for col in bool_cols:
         if col in contract_row.index:
-            contract_row[col] = parse_range(contract_row[col])
-
-    feature_columns = [
-        "award_year", "award_month", "primary_state", "geopolitical_zone",
-        "latitude_start", "longitude_start", "estimated_length_km",
-        "terrain_type", "rainfall_mm_per_year", "soil_type", "elevation_m",
-        "has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp",
-        "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
-        "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
-    ]
-
-    available = [col for col in feature_columns if col in contract_row.index]
-
-    if not available:
-        print("[WARNING] No model features available → fallback range")
-        return 0, 0
-
-    features = contract_row[available]
-    features_df = pd.DataFrame([features.values], columns=features.index)
-
-    try:
-        base_price = model.predict(features_df)[0]
-    except Exception as e:
-        print(f"[ERROR] Model predict failed: {e}")
-        base_price = 0
-
-    adjusted = adjust_for_inflation(base_price)
-    return adjusted * 0.9, adjusted * 1.1
-
+            val = contract_row[col]
+            if isinstance(val, str):
+                contract_row[col] = 1 if val.lower() in ['yes', 'y', 'true'] else 0
+            elif pd.isna(val):
+                contract_row[col] = 0
 
     # Convert range strings like '500-700' to average float
     def parse_range(val):
@@ -282,27 +239,7 @@ def get_admin_user(request: Request) -> int:
     if not token or token not in sessions:
         raise HTTPException(status_code=401, detail="Admin not authenticated")
     return sessions[token]
-def get_fair_price_range(contract_row):
-    contract_row = contract_row.copy()
-    contract_row['award_year'] = 2026
-    contract_row['award_month'] = 2
-    contract_row['primary_state'] = parse_primary_state(contract_row.get('project_name', ''))
-    contract_row['latitude_start'] = contract_row.get('latitude', 0)
-    contract_row['longitude_start'] = contract_row.get('longitude', 0)
 
-    # Convert 'Yes'/'No' to 1/0
-    bool_cols = ["has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp"]
-    for col in bool_cols:
-        if col in contract_row.index:
-            val = contract_row[col]
-            if isinstance(val, str):
-                contract_row[col] = 1 if val.lower() in ['yes', 'y', 'true'] else 0
-            elif pd.isna(val):
-                contract_row[col] = 0
-
-    # (keep your parse_range for numeric ranges)
-
-    # ... rest of the function as before ...
 # ────────────────────────────────────────────────
 #  EMAIL
 # ────────────────────────────────────────────────
@@ -312,10 +249,10 @@ def send_bid_notification(email: str, company_name: str, contract_name: str, sta
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"           # ← CHANGE
-        EMAIL_PASSWORD = os.getenv("qweRasd@90")           # ← use env var!
+        EMAIL_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")           # ← use env var!
 
         if not EMAIL_PASSWORD:
-            raise ValueValue("EMAIL_APP_PASSWORD not set")
+            raise ValueError("EMAIL_APP_PASSWORD not set")
 
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
@@ -393,9 +330,6 @@ async def register_user(
     except Exception as e:
         print(f"Register error: {e}")
         return HTMLResponse("<h2 style='color:red;'>Server error</h2>", status_code=500)
-        @app.get("/test-admin")
-    def test_admin():
-    return {"message": "Admin routes are working"}
 
 # ── Login ────────────────────────────────────────
 
@@ -780,23 +714,6 @@ def admin_dashboard(request: Request):
             for b in enhanced:
                 cls = "fair" if b["is_fair"] else "unfair"
                 range_cls = "approved" if b["is_fair"] else "rejected"
-                admin_status_cap = b["admin_status"].capitalize()
-                comments_or_none = b["comments"] or "None"
-                action_html = f"""
-                Already {admin_status_cap}
-                """
-                if b["admin_status"] == "pending":
-                    action_html = f"""
-                    <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
-                        <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
-                        <button type="submit" style="background:green;color:white;padding:5px;">Approve ✅</button>
-                    </form>
-                    <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
-                        <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
-                        <button type="submit" style="background:red;color:white;padding:5px;">Reject ❌</button>
-                    </form>
-                    """
-
                 html += f"""
                 <tr class="{cls}">
                     <td>{b["bid_id"]}</td>
@@ -808,9 +725,18 @@ def admin_dashboard(request: Request):
                     <td class="{'approved' if b['is_fair'] else 'rejected'}">{'Within range' if b['is_fair'] else 'High'}</td>
                     <td>{b["status"]}</td>
                     <td><small>{b["timestamp"]}</small></td>
-                    <td>{admin_status_cap}</td>
-                    <td>{comments_or_none}</td>
-                    <td>{action_html}</td>
+                    <td>{b["admin_status"]}</td>
+                    <td>{b["comments"]}</td>
+                    <td>
+                        <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
+                            <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
+                            <button type="submit" style="background:green;color:white;padding:5px;">Approve ✅</button>
+                        </form>
+                        <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
+                            <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
+                            <button type="submit" style="background:red;color:white;padding:5px;">Reject ❌</button>
+                        </form>
+                    </td>
                 </tr>
                 """
 
@@ -845,6 +771,3 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-
