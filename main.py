@@ -282,7 +282,27 @@ def get_admin_user(request: Request) -> int:
     if not token or token not in sessions:
         raise HTTPException(status_code=401, detail="Admin not authenticated")
     return sessions[token]
+def get_fair_price_range(contract_row):
+    contract_row = contract_row.copy()
+    contract_row['award_year'] = 2026
+    contract_row['award_month'] = 2
+    contract_row['primary_state'] = parse_primary_state(contract_row.get('project_name', ''))
+    contract_row['latitude_start'] = contract_row.get('latitude', 0)
+    contract_row['longitude_start'] = contract_row.get('longitude', 0)
 
+    # Convert 'Yes'/'No' to 1/0
+    bool_cols = ["has_bridge", "is_dual_carriageway", "is_rehabilitation", "is_coastal_or_swamp"]
+    for col in bool_cols:
+        if col in contract_row.index:
+            val = contract_row[col]
+            if isinstance(val, str):
+                contract_row[col] = 1 if val.lower() in ['yes', 'y', 'true'] else 0
+            elif pd.isna(val):
+                contract_row[col] = 0
+
+    # (keep your parse_range for numeric ranges)
+
+    # ... rest of the function as before ...
 # ────────────────────────────────────────────────
 #  EMAIL
 # ────────────────────────────────────────────────
@@ -292,7 +312,7 @@ def send_bid_notification(email: str, company_name: str, contract_name: str, sta
         EMAIL_HOST = "smtp.gmail.com"
         EMAIL_PORT = 587
         EMAIL_USER = "aisec2025.notifications@gmail.com"           # ← CHANGE
-        EMAIL_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")           # ← use env var!
+        EMAIL_PASSWORD = os.getenv("qweRasd@90")           # ← use env var!
 
         if not EMAIL_PASSWORD:
             raise ValueValue("EMAIL_APP_PASSWORD not set")
@@ -373,6 +393,9 @@ async def register_user(
     except Exception as e:
         print(f"Register error: {e}")
         return HTMLResponse("<h2 style='color:red;'>Server error</h2>", status_code=500)
+        @app.get("/test-admin")
+    def test_admin():
+    return {"message": "Admin routes are working"}
 
 # ── Login ────────────────────────────────────────
 
@@ -810,10 +833,18 @@ def debug_bids():
         rows = cur.fetchall()
     return {"recent_bids": [dict(zip(["id", "contract_id", "company_name", "bid_amount", "status"], row)) for row in rows]}
 
+@app.get("/debug-admin")
+def debug_admin(request: Request):
+    try:
+        get_admin_user(request)
+        return {"admin": "authenticated"}
+    except HTTPException as e:
+        return {"error": str(e)}
 # ────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
