@@ -77,6 +77,33 @@ def get_db():
         conn.close()
 
 def init_database():
+    def migrate_bids_table():
+    with get_db() as (cur, _):
+        # Add admin_status if missing
+        cur.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT FROM information_schema.columns 
+                WHERE table_name = 'bids' AND column_name = 'admin_status'
+            ) THEN
+                ALTER TABLE bids ADD COLUMN admin_status TEXT DEFAULT 'pending';
+            END IF;
+        END $$;
+        """)
+
+        # Add comments if missing
+        cur.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT FROM information_schema.columns 
+                WHERE table_name = 'bids' AND column_name = 'comments'
+            ) THEN
+                ALTER TABLE bids ADD COLUMN comments TEXT;
+            END IF;
+        END $$;
+        """)
     with get_db() as (cur, _):
         cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -797,3 +824,4 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
