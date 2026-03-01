@@ -76,8 +76,7 @@ def get_db():
         cur.close()
         conn.close()
 
-def init_database():
-    def migrate_bids_table():
+def migrate_bids_table():
     with get_db() as (cur, _):
         # Add admin_status if missing
         cur.execute("""
@@ -104,6 +103,8 @@ def init_database():
             END IF;
         END $$;
         """)
+
+def init_database():
     with get_db() as (cur, _):
         cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -128,8 +129,6 @@ def init_database():
             equipment_list TEXT NOT NULL,
             workforce TEXT NOT NULL,
             status TEXT NOT NULL,
-            admin_status TEXT DEFAULT 'pending',
-            comments TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
@@ -150,7 +149,8 @@ def init_database():
         """, ("admin", hashlib.sha256("admin123".encode()).hexdigest()))
 
 init_database()
-migrate_bids_table()  # ← add this line
+migrate_bids_table()
+
 # ────────────────────────────────────────────────
 #  MODEL & DATA
 # ────────────────────────────────────────────────
@@ -180,9 +180,9 @@ def parse_primary_state(project_name):
     return 'Unknown'
 
 def get_fair_price_range(contract_row):
-    contract_row = contract_row.copy()
+    contract_row = contract_row.copy()  # Avoid modifying original
     contract_row['award_year'] = 2026
-    contract_row['award_month'] = 2
+    contract_row['award_month'] = 2  # February
     contract_row['primary_state'] = parse_primary_state(contract_row.get('project_name', ''))
     contract_row['latitude_start'] = contract_row.get('latitude', 0)
     contract_row['longitude_start'] = contract_row.get('longitude', 0)
@@ -212,8 +212,9 @@ def get_fair_price_range(contract_row):
         except:
             return 0.0
 
+    # Apply to all potential numeric columns
     numeric_cols = [
-        "estimated_length_km", "rainfall_mm_per_year", "elevation_m",
+        "estimated_length_km", "rainfall_mm_per_year", "soil_type", "elevation_m",
         "boq_earthworks_m3_per_km", "boq_asphalt_ton_per_km", "boq_drainage_km_per_km",
         "boq_bridges_units", "boq_culverts_units", "boq_premium_percent"
     ]
@@ -586,56 +587,35 @@ async def submit_bid(
         </div>
         """, status_code=500)
 
-# ── Admin routes ────────────────────────────────
+# ── Admin approve/reject ─────────────────────────
 
-@app.get("/admin/login", response_class=HTMLResponse)
-def admin_login_page():
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head><title>Admin Login</title></head>
-    <body style="font-family:sans-serif;background:#f0f9ff;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-        <div style="background:white;padding:40px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.12);max-width:420px;width:100%;">
-            <h2 style="text-align:center;color:#1e40af;margin-bottom:30px;">AISEC Admin Login</h2>
-            <form method="post" style="display:flex;flex-direction:column;gap:16px;">
-                <input type="text" name="username" placeholder="Username" required style="padding:12px;border:1px solid #ddd;border-radius:8px;">
-                <input type="password" name="password" placeholder="Password" required style="padding:12px;border:1px solid #ddd;border-radius:8px;">
-                <button type="submit" style="padding:14px;background:#2563eb;color:white;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Login</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    """
-
-@app.post("/admin/login", response_class=HTMLResponse)
-async def admin_login(response: Response, username: str = Form(...), password: str = Form(...)):
-    hashed = hashlib.sha256(password.encode()).hexdigest()
-
+@app.post("/admin/bids/{bid_id}/approve", response_class=RedirectResponse)
+async def admin_approve_bid(bid_id: int, comments: str = Form(None)):
     try:
-        with get_db() as (cur, _):
+        with get_db() as (cur, conn):
             cur.execute(
-                "SELECT id FROM admins WHERE username = %s AND hashed_password = %s",
-                (username, hashed)
+                "UPDATE bids SET admin_status = %s, comments = %s WHERE id = %s",
+                ('approved', comments, bid_id)
             )
-            admin = cur.fetchone()
-
-        if admin:
-            token = create_session(admin[0])
-            resp = RedirectResponse(url="/admin/dashboard", status_code=303)
-            resp.set_cookie(key="admin_token", value=token, httponly=True, max_age=3600*24)
-            return resp
-
-        return HTMLResponse("<h2 style='color:red;text-align:center;'>Invalid credentials</h2><p><a href='/admin/login'>Try again</a></p>")
-
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
     except Exception as e:
-        print(f"Admin login error: {e}")
-        return HTMLResponse("<h2 style='color:red;'>Server error</h2>")
+        print(f"[ERROR admin_approve] {e}")
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
 
-@app.get("/admin/logout", response_class=HTMLResponse)
-def admin_logout(response: Response):
-    resp = RedirectResponse(url="/admin/login", status_code=303)
-    resp.delete_cookie("admin_token")
-    return resp
+@app.post("/admin/bids/{bid_id}/reject", response_class=RedirectResponse)
+async def admin_reject_bid(bid_id: int, comments: str = Form(None)):
+    try:
+        with get_db() as (cur, conn):
+            cur.execute(
+                "UPDATE bids SET admin_status = %s, comments = %s WHERE id = %s",
+                ('rejected', comments, bid_id)
+            )
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
+    except Exception as e:
+        print(f"[ERROR admin_reject] {e}")
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
+
+# ── Admin dashboard ──────────────────────────────
 
 @app.get("/admin/dashboard", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
@@ -694,6 +674,8 @@ def admin_dashboard(request: Request):
         fair_count = sum(1 for x in enhanced if x["is_fair"])
         unfair_count = total - fair_count
         total_value = sum(x["bid_amount"] for x in enhanced)
+
+        # ── HTML ───────────────────────────────────── (kept similar structure)
 
         html = f"""<!DOCTYPE html>
 <html>
@@ -824,5 +806,3 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
