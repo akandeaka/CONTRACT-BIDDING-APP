@@ -150,7 +150,7 @@ def init_database():
         """, ("admin", hashlib.sha256("admin123".encode()).hexdigest()))
 
 init_database()
-
+migrate_bids_table()  # ← add this line
 # ────────────────────────────────────────────────
 #  MODEL & DATA
 # ────────────────────────────────────────────────
@@ -824,4 +824,5 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
