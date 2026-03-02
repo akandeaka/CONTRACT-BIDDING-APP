@@ -695,7 +695,7 @@ def admin_dashboard(request: Request):
         unfair_count = total - fair_count
         total_value = sum(x["bid_amount"] for x in enhanced)
 
-        html = f"""<!DOCTYPE html>
+       html = f"""<!DOCTYPE html>
 <html>
 <head>
     <title>AISEC Admin Dashboard</title>
@@ -716,6 +716,7 @@ def admin_dashboard(request: Request):
         .unfair {{ background:#fff7ed; border-left:5px solid var(--w); }}
         .approved {{ color:var(--s); font-weight:700; }}
         .rejected {{ color:var(--d); font-weight:700; }}
+        .comment-cell {{ font-style:italic; color:#4b5563; max-width:250px; white-space:pre-wrap; }}
     </style>
 </head>
 <body>
@@ -736,61 +737,60 @@ def admin_dashboard(request: Request):
 
 <table>
 <thead><tr>
-    <th>Bid ID</th>
-    <th>Contract</th>
-    <th>Company / CAC</th>
-    <th>Contact</th>
-    <th>Bid (₦B)</th>
+    <th>Contract ID</th>
+    <th>Company (Email & Phone)</th>
+    <th>Contract Name</th>
+    <th>Bid Amount (₦B)</th>
     <th>AI Fair Range (₦B)</th>
-    <th>Assessment</th>
-    <th>Status</th>
     <th>Time</th>
-    <th>Admin Status</th>
-    <th>Comments</th>
+    <th>Status</th>
+    <th>Approved / Rejected</th>
+    <th>Comment / Reason</th>
     <th>Action</th>
 </tr></thead>
 <tbody>
 """
 
-        if not enhanced:
-            html += '<tr><td colspan="12" style="text-align:center;padding:3rem;color:#64748b;">No bids yet</td></tr>'
-        else:
-            for b in enhanced:
-                cls = "fair" if b["is_fair"] else "unfair"
-                range_cls = "approved" if b["is_fair"] else "rejected"
-                admin_status_cap = b["admin_status"].capitalize()
-                comments_or_none = b["comments"] or "None"
-                action_html = f"""
-                Already {admin_status_cap}
-                """
-                if b["admin_status"] == "pending":
-                    action_html = f"""
-                    <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
-                        <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
-                        <button type="submit" style="background:green;color:white;padding:5px;">Approve ✅</button>
-                    </form>
-                    <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
-                        <textarea name="comments" placeholder="Comments" style="width:100%; height:50px;"></textarea>
-                        <button type="submit" style="background:red;color:white;padding:5px;">Reject ❌</button>
-                    </form>
-                    """
+if not enhanced:
+    html += '<tr><td colspan="10" style="text-align:center;padding:3rem;color:#64748b;">No bids yet</td></tr>'
+else:
+    for b in enhanced:
+        cls = "fair" if b["is_fair"] else "unfair"
+        range_cls = "approved" if b["is_fair"] else "rejected"
+        admin_status_cap = b["admin_status"].capitalize()
+        comments_or_none = b["comments"] or "No comment provided"
+        company_info = f"{b['company_name']}<br><small>{b['email']}<br>{b['phone']}</small>"
+        action_html = f"Already {admin_status_cap}"
+        if b["admin_status"] == "pending":
+            action_html = f"""
+            <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
+                <textarea name="comments" placeholder="Reason for approval" style="width:100%;height:50px;"></textarea>
+                <button type="submit" style="background:green;color:white;padding:5px;margin-top:5px;">Approve ✅</button>
+            </form>
+            <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
+                <textarea name="comments" placeholder="Reason for rejection" style="width:100%;height:50px;"></textarea>
+                <button type="submit" style="background:red;color:white;padding:5px;margin-top:5px;">Reject ❌</button>
+            </form>
+            """
 
-                html += f"""
-                <tr class="{cls}">
-                    <td>{b["bid_id"]}</td>
-                    <td>{b["contract_name"]}</td>
-                    <td>{b["company_name"]}<br><small style="color:#6b7280;">{b["cac_number"]}</small></td>
-                    <td>{b["email"]}<br><small style="color:#6b7280;">{b["phone"]}</small></td>
-                    <td>₦{b["bid_amount"]:,.2f}B</td>
-                    <td class="{range_cls}">₦{b["fair_min"]:,.2f} – ₦{b["fair_max"]:,.2f}B</td>
-                    <td class="{'approved' if b['is_fair'] else 'rejected'}">{'Within range' if b['is_fair'] else 'High'}</td>
-                    <td>{b["status"]}</td>
-                    <td><small>{b["timestamp"]}</small></td>
-                    <td>{admin_status_cap}</td>
-                    <td>{comments_or_none}</td>
-                    <td>{action_html}</td>
-                </tr>
-                """
+        html += f"""
+        <tr class="{cls}">
+            <td>{b["bid_id"]} (Contract {b["bid_id"]})</td>
+            <td>{company_info}</td>
+            <td>{b["contract_name"]}</td>
+            <td>₦{b["bid_amount"]:,.2f}B</td>
+            <td class="{range_cls}">₦{b["fair_min"]:,.2f} – ₦{b["fair_max"]:,.2f}B</td>
+            <td><small>{b["timestamp"]}</small></td>
+            <td>{b["status"]}</td>
+            <td class="{'approved' if b['admin_status'] == 'approved' else 'rejected'}">{admin_status_cap}</td>
+            <td class="comment-cell">{comments_or_none}</td>
+            <td>{action_html}</td>
+        </tr>
+        """
+
+html += "</tbody></table></div></body></html>"
+
+return HTMLResponse(html)
 
         html += "</tbody></table></div></body></html>"
 
@@ -824,3 +824,4 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
