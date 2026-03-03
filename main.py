@@ -645,7 +645,8 @@ def admin_dashboard(request: Request):
         with get_db() as (cur, _):
             cur.execute("""
             SELECT id, contract_id, company_name, cac_number, email, phone,
-                   bid_amount, equipment_list, workforce, status, timestamp, admin_status, comments
+                   bid_amount, equipment_list, workforce, status, timestamp,
+                   admin_status, comments
             FROM bids ORDER BY timestamp DESC
             """)
             bids = cur.fetchall()
@@ -672,7 +673,8 @@ def admin_dashboard(request: Request):
                     "admin_status": bid[11] or "pending",
                     "comments": bid[12] or ""
                 })
-            except Exception:
+            except Exception as ex:
+                print(f"Error processing bid {bid[0]}: {ex}")
                 enhanced.append({
                     "bid_id": bid[0],
                     "contract_name": f"Contract {bid[1]} (data missing)",
@@ -695,28 +697,32 @@ def admin_dashboard(request: Request):
         unfair_count = total - fair_count
         total_value = sum(x["bid_amount"] for x in enhanced)
 
-       html = f"""<!DOCTYPE html>
-<html>
+        html = f"""<!DOCTYPE html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AISEC Admin Dashboard</title>
     <style>
         :root {{ --p:#2563eb; --s:#10b981; --w:#f59e0b; --d:#ef4444; }}
-        body {{ font-family:'Segoe UI',sans-serif; background:#f8fafc; margin:0; }}
+        body {{ font-family:'Segoe UI',sans-serif; background:#f8fafc; margin:0; padding:0; }}
         .header {{ background:linear-gradient(135deg,#1e40af,#0c4a6e); color:white; padding:1.2rem 3rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.2); }}
         .container {{ max-width:1800px; margin:2rem auto; padding:0 1.5rem; }}
         .stats {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1.5rem; margin-bottom:2.5rem; }}
         .card {{ background:white; border-radius:16px; padding:1.8rem; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,0.08); border-top:5px solid var(--p); transition:transform 0.2s; }}
         .card:hover {{ transform:translateY(-6px); }}
         .big {{ font-size:3.2rem; font-weight:800; background:linear-gradient(90deg,var(--p),#0ea5e9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }}
-        table {{ width:100%; border-collapse:collapse; background:white; border-radius:16px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.1); }}
+        table {{ width:100%; border-collapse:collapse; background:white; border-radius:16px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.1); table-layout:fixed; }}
         th {{ background:#f1f5f9; padding:1.1rem; text-align:left; font-weight:700; color:#1e40af; position:sticky; top:70px; z-index:10; }}
-        td {{ padding:1rem; border-bottom:1px solid #f1f5f9; }}
+        td {{ padding:1rem; border-bottom:1px solid #f1f5f9; vertical-align:top; }}
         tr:hover {{ background:#f8fafc; }}
         .fair {{ background:#f0fdf4; border-left:5px solid var(--s); }}
         .unfair {{ background:#fff7ed; border-left:5px solid var(--w); }}
         .approved {{ color:var(--s); font-weight:700; }}
         .rejected {{ color:var(--d); font-weight:700; }}
-        .comment-cell {{ font-style:italic; color:#4b5563; max-width:250px; white-space:pre-wrap; }}
+        .comment-cell {{ font-style:italic; color:#4b5563; max-width:280px; white-space:pre-wrap; word-break:break-word; }}
+        .company-cell {{ white-space:nowrap; }}
+        .action-cell {{ min-width:220px; }}
     </style>
 </head>
 <body>
@@ -751,46 +757,39 @@ def admin_dashboard(request: Request):
 <tbody>
 """
 
-if not enhanced:
-    html += '<tr><td colspan="10" style="text-align:center;padding:3rem;color:#64748b;">No bids yet</td></tr>'
-else:
-    for b in enhanced:
-        cls = "fair" if b["is_fair"] else "unfair"
-        range_cls = "approved" if b["is_fair"] else "rejected"
-        admin_status_cap = b["admin_status"].capitalize()
-        comments_or_none = b["comments"] or "No comment provided"
-        company_info = f"{b['company_name']}<br><small>{b['email']}<br>{b['phone']}</small>"
-        action_html = f"Already {admin_status_cap}"
-        if b["admin_status"] == "pending":
-            action_html = f"""
-            <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
-                <textarea name="comments" placeholder="Reason for approval" style="width:100%;height:50px;"></textarea>
-                <button type="submit" style="background:green;color:white;padding:5px;margin-top:5px;">Approve ✅</button>
-            </form>
-            <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
-                <textarea name="comments" placeholder="Reason for rejection" style="width:100%;height:50px;"></textarea>
-                <button type="submit" style="background:red;color:white;padding:5px;margin-top:5px;">Reject ❌</button>
-            </form>
-            """
+        if not enhanced:
+            html += '<tr><td colspan="10" style="text-align:center;padding:3rem;color:#64748b;">No bids yet</td></tr>'
+        else:
+            for b in enhanced:
+                cls = "fair" if b["is_fair"] else "unfair"
+                company_info = f"{b['company_name']}<br><small>{b['email']}<br>{b['phone']}</small>"
+                action_html = f"Already {b['admin_status'].capitalize()}"
+                if b["admin_status"] == "pending":
+                    action_html = f"""
+                    <form method="POST" action="/admin/bids/{b['bid_id']}/approve">
+                        <textarea name="comments" placeholder="Reason for approval" style="width:100%;height:50px;"></textarea>
+                        <button type="submit" style="background:#10b981;color:white;padding:5px;margin-top:5px;border:none;border-radius:4px;cursor:pointer;">Approve ✅</button>
+                    </form>
+                    <form method="POST" action="/admin/bids/{b['bid_id']}/reject">
+                        <textarea name="comments" placeholder="Reason for rejection" style="width:100%;height:50px;"></textarea>
+                        <button type="submit" style="background:#ef4444;color:white;padding:5px;margin-top:5px;border:none;border-radius:4px;cursor:pointer;">Reject ❌</button>
+                    </form>
+                    """
 
-        html += f"""
-        <tr class="{cls}">
-            <td>{b["bid_id"]} (Contract {b["bid_id"]})</td>
-            <td>{company_info}</td>
-            <td>{b["contract_name"]}</td>
-            <td>₦{b["bid_amount"]:,.2f}B</td>
-            <td class="{range_cls}">₦{b["fair_min"]:,.2f} – ₦{b["fair_max"]:,.2f}B</td>
-            <td><small>{b["timestamp"]}</small></td>
-            <td>{b["status"]}</td>
-            <td class="{'approved' if b['admin_status'] == 'approved' else 'rejected'}">{admin_status_cap}</td>
-            <td class="comment-cell">{comments_or_none}</td>
-            <td>{action_html}</td>
-        </tr>
-        """
-
-html += "</tbody></table></div></body></html>"
-
-return HTMLResponse(html)
+                html += f"""
+                <tr class="{cls}">
+                    <td>{b["bid_id"]}</td>
+                    <td class="company-cell">{company_info}</td>
+                    <td>{b["contract_name"]}</td>
+                    <td>₦{b["bid_amount"]:,.2f}B</td>
+                    <td>₦{b["fair_min"]:,.2f} – ₦{b["fair_max"]:,.2f}B</td>
+                    <td><small>{b["timestamp"]}</small></td>
+                    <td>{b["status"]}</td>
+                    <td class="{'approved' if b['admin_status'] == 'approved' else 'rejected'}">{b['admin_status'].capitalize()}</td>
+                    <td class="comment-cell">{b["comments"] or "No comment provided"}</td>
+                    <td class="action-cell">{action_html}</td>
+                </tr>
+                """
 
         html += "</tbody></table></div></body></html>"
 
@@ -801,7 +800,6 @@ return HTMLResponse(html)
     except Exception as e:
         print(f"Dashboard error: {e}")
         return HTMLResponse("<h2 style='color:red;text-align:center;'>Error loading dashboard</h2>")
-
 # ── Debug endpoint ───────────────────────────────
 
 @app.get("/debug/bids")
@@ -824,4 +822,5 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
