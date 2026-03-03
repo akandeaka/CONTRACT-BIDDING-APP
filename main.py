@@ -800,6 +800,33 @@ def admin_dashboard(request: Request):
     except Exception as e:
         print(f"Dashboard error: {e}")
         return HTMLResponse("<h2 style='color:red;text-align:center;'>Error loading dashboard</h2>")
+        @app.post("/admin/bids/{bid_id}/approve", response_class=RedirectResponse)
+async def admin_approve_bid(bid_id: int, comments: str = Form(None)):
+    try:
+        with get_db() as (cur, conn):
+            cur.execute(
+                "UPDATE bids SET admin_status = %s, comments = %s WHERE id = %s",
+                ('approved', comments, bid_id)
+            )
+            conn.commit()
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
+    except Exception as e:
+        print(f"[ERROR admin_approve] {e}")
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
+
+@app.post("/admin/bids/{bid_id}/reject", response_class=RedirectResponse)
+async def admin_reject_bid(bid_id: int, comments: str = Form(None)):
+    try:
+        with get_db() as (cur, conn):
+            cur.execute(
+                "UPDATE bids SET admin_status = %s, comments = %s WHERE id = %s",
+                ('rejected', comments, bid_id)
+            )
+            conn.commit()
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
+    except Exception as e:
+        print(f"[ERROR admin_reject] {e}")
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
 # ── Debug endpoint ───────────────────────────────
 
 @app.get("/debug/bids")
@@ -822,5 +849,6 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
