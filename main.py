@@ -637,30 +637,134 @@ def admin_dashboard(request: Request):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AISEC Admin Dashboard</title>
     <style>
-        :root {{ --primary:#2563eb; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; --gray:#64748b; }}
-        body {{ font-family:'Segoe UI',sans-serif; background:#f8fafc; margin:0; color:#1e293b; }}
-        .header {{ background:linear-gradient(135deg,#1e40af,#0c4a6e); color:white; padding:1.2rem 3rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.2); }}
-        .container {{ max-width:1800px; margin:2rem auto; padding:0 1.5rem; }}
-        h1 {{ color:#0f172a; margin:2rem 0 1.5rem; font-size:2.4rem; }}
-        .stats {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1.5rem; margin-bottom:2.5rem; }}
-        .card {{ background:white; border-radius:16px; padding:1.8rem; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,0.08); border-top:5px solid var(--primary); transition:transform 0.2s; }}
-        .card:hover {{ transform:translateY(-6px); }}
-        .big {{ font-size:3.2rem; font-weight:800; background:linear-gradient(90deg,var(--primary),#0ea5e9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }}
-        table {{ width:100%; border-collapse:collapse; background:white; border-radius:16px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.1); table-layout:fixed; }}
-        th {{ background:#f1f5f9; padding:1.1rem; text-align:left; font-weight:700; color:#1e40af; position:sticky; top:70px; z-index:10; }}
-        td {{ padding:1rem; border-bottom:1px solid #e2e8f0; vertical-align:top; }}
-        tr:hover {{ background:#f8fafc; }}
-        .fair-row {{ background:#f0fdf4; }}
-        .unfair-row {{ background:#fff7ed; }}
-        .approved {{ color:var(--success); font-weight:700; }}
-        .rejected {{ color:var(--danger); font-weight:700; }}
-        .comment-cell {{ font-style:italic; color:var(--gray); max-width:320px; white-space:pre-wrap; word-break:break-word; }}
-        .company-cell {{ white-space:nowrap; }}
-        .action-cell {{ min-width:220px; }}
-        .btn {{ padding:6px 12px; border:none; border-radius:6px; color:white; font-weight:600; cursor:pointer; margin:4px 0; width:100%; }}
-        .btn-approve {{ background:var(--success); }}
-        .btn-reject {{ background:var(--danger); }}
-        textarea {{ width:100%; height:60px; padding:8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px; resize:vertical; }}
+        :root {{
+            --primary: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --gray: #64748b;
+            --light: #f8fafc;
+            --dark: #1e293b;
+        }}
+        body {{
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--light);
+            margin: 0;
+            color: var(--dark);
+        }}
+        .header {{
+            background: linear-gradient(135deg, #1e40af, #0c4a6e);
+            color: white;
+            padding: 1.2rem 3rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }}
+        .container {{
+            max-width: 1800px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+        }}
+        h1 {{
+            color: var(--dark);
+            margin: 2rem 0 1.5rem;
+            font-size: 2.4rem;
+        }}
+        .stats {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }}
+        .card {{
+            background: white;
+            border-radius: 16px;
+            padding: 1.8rem;
+            text-align: center;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+            border-top: 5px solid var(--primary);
+            transition: transform 0.2s;
+        }}
+        .card:hover {{
+            transform: translateY(-6px);
+        }}
+        .big {{
+            font-size: 3.2rem;
+            font-weight: 800;
+            background: linear-gradient(90deg, var(--primary), #0ea5e9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            table-layout: fixed;
+        }}
+        th {{
+            background: #f1f5f9;
+            padding: 1.1rem;
+            text-align: left;
+            font-weight: 700;
+            color: #1e40af;
+            position: sticky;
+            top: 70px;
+            z-index: 10;
+            white-space: nowrap;
+        }}
+        td {{
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: top;
+        }}
+        tr:hover {{
+            background: #f8fafc;
+        }}
+        .fair-row {{ background: #f0fdf4; }}
+        .unfair-row {{ background: #fff7ed; }}
+        .approved {{ color: var(--success); font-weight: 700; }}
+        .rejected {{ color: var(--danger); font-weight: 700; }}
+        .comment-cell {{
+            font-style: italic;
+            color: var(--gray);
+            max-width: 320px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }}
+        .company-cell {{ white-space: nowrap; }}
+        .action-cell {{ min-width: 220px; }}
+        .btn {{
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 6px 0;
+            width: 100%;
+            transition: opacity 0.2s;
+        }}
+        .btn:hover {{ opacity: 0.9; }}
+        .btn-approve {{ background: var(--success); }}
+        .btn-reject {{ background: var(--danger); }}
+        textarea {{
+            width: 100%;
+            height: 70px;
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            resize: vertical;
+            font-family: inherit;
+        }}
+        small {{ color: var(--gray); }}
     </style>
 </head>
 <body>
@@ -698,13 +802,13 @@ def admin_dashboard(request: Request):
 """
 
         if not enhanced:
-            html += '<tr><td colspan="10" style="text-align:center;padding:3rem;color:#64748b;">No bids have been submitted yet.</td></tr>'
+            html += '<tr><td colspan="10" style="text-align:center;padding:3rem;color:var(--gray);">No bids have been submitted yet.</td></tr>'
         else:
             for b in enhanced:
                 row_class = "fair-row" if b["is_fair"] else "unfair-row"
                 company_info = f"{b['company_name']}<br><small>{b['email']}<br>{b['phone']}</small>"
                 decision_class = "approved" if b["admin_status"] == "approved" else "rejected" if b["admin_status"] == "rejected" else ""
-                decision_text = b["admin_status"].capitalize()
+                decision_text = b["admin_status"].capitalize() if b["admin_status"] != "pending" else "Pending"
                 comment_text = b["comments"] or "—"
                 action_html = f"<span style='color:var(--gray);font-style:italic;'>Already {decision_text}</span>"
 
@@ -797,3 +901,4 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
