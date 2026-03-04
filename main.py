@@ -585,12 +585,16 @@ def admin_dashboard(request: Request):
             bids = cur.fetchall()
 
         enhanced = []
+        approved_value = 0.0
+        pending_count = 0
+
         for bid in bids:
             try:
                 row = df_bidding.iloc[bid[1]]
                 fmin, fmax = get_fair_price_range(row)
                 is_fair = fmin <= bid[6] <= fmax
-                enhanced.append({
+
+                entry = {
                     "bid_id": bid[0],
                     "contract_name": row.get("project_name", f"Contract {bid[1]}"),
                     "company_name": bid[2] or "—",
@@ -605,10 +609,19 @@ def admin_dashboard(request: Request):
                     "timestamp": bid[10],
                     "admin_status": bid[11] or "pending",
                     "comments": bid[12] or ""
-                })
+                }
+
+                # Track approved value & pending count
+                if entry["admin_status"] == "approved":
+                    approved_value += entry["bid_amount"]
+                elif entry["admin_status"] == "pending":
+                    pending_count += 1
+
+                enhanced.append(entry)
+
             except Exception as ex:
                 print(f"Error processing bid {bid[0]}: {ex}")
-                enhanced.append({
+                entry = {
                     "bid_id": bid[0],
                     "contract_name": f"Contract {bid[1]} (data missing)",
                     "company_name": bid[2] or "—",
@@ -623,12 +636,14 @@ def admin_dashboard(request: Request):
                     "timestamp": bid[10],
                     "admin_status": bid[11] or "pending",
                     "comments": bid[12] or ""
-                })
+                }
+                enhanced.append(entry)
 
         total = len(enhanced)
         fair_count = sum(1 for x in enhanced if x["is_fair"])
         unfair_count = total - fair_count
         total_value = sum(x["bid_amount"] for x in enhanced)
+        approved_count = sum(1 for x in enhanced if x["admin_status"] == "approved")
 
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -671,8 +686,13 @@ def admin_dashboard(request: Request):
         }}
         h1 {{
             color: var(--dark);
-            margin: 2rem 0 1.5rem;
+            margin: 2rem 0 1rem;
             font-size: 2.4rem;
+        }}
+        .summary {{
+            font-size: 1.1rem;
+            color: var(--gray);
+            margin-bottom: 1.5rem;
         }}
         .stats {{
             display: grid;
@@ -686,7 +706,6 @@ def admin_dashboard(request: Request):
             padding: 1.8rem;
             text-align: center;
             box-shadow: 0 6px 20px rgba(0,0,0,0.08);
-            border-top: 5px solid var(--primary);
             transition: transform 0.2s;
         }}
         .card:hover {{
@@ -695,10 +714,9 @@ def admin_dashboard(request: Request):
         .big {{
             font-size: 3.2rem;
             font-weight: 800;
-            background: linear-gradient(90deg, var(--primary), #0ea5e9);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
         }}
+        .card.approved .big {{ color: var(--success); }}
+        .card.pending .big {{ color: var(--warning); }}
         table {{
             width: 100%;
             border-collapse: collapse;
@@ -727,10 +745,12 @@ def admin_dashboard(request: Request):
         tr:hover {{
             background: #f8fafc;
         }}
-        .fair-row {{ background: #f0fdf4; }}
-        .unfair-row {{ background: #fff7ed; }}
+        .approved-row {{ background: #f0fdf4; }}
+        .rejected-row {{ background: #fef2f2; }}
+        .pending-row {{ background: #fffbeb; }}
         .approved {{ color: var(--success); font-weight: 700; }}
         .rejected {{ color: var(--danger); font-weight: 700; }}
+        .pending {{ color: var(--warning); font-weight: 600; }}
         .comment-cell {{
             font-style: italic;
             color: var(--gray);
@@ -775,11 +795,12 @@ def admin_dashboard(request: Request):
 
 <div class="container">
 <h1>Bid Overview & AI Fairness Check</h1>
+<p class="summary">Showing <strong>{approved_count}</strong> approved bids (₦{approved_value:,.2f}B) out of <strong>{total}</strong> total submissions</p>
 
 <div class="stats">
     <div class="card"><div class="big">{total}</div><div>Total Bids</div></div>
-    <div class="card" style="border-top-color:var(--success);"><div class="big">{fair_count}</div><div>Fair (Approved)</div></div>
-    <div class="card" style="border-top-color:var(--warning);"><div class="big">{unfair_count}</div><div>Flagged (High)</div></div>
+    <div class="card approved"><div class="big">{approved_count}</div><div>Approved Bids</div></div>
+    <div class="card" style="border-top-color:var(--warning);"><div class="big">{pending_count}</div><div>Pending Review</div></div>
     <div class="card" style="border-top-color:#0ea5e9;"><div class="big">₦{total_value:,.2f}B</div><div>Total Value</div></div>
 </div>
 
@@ -805,10 +826,10 @@ def admin_dashboard(request: Request):
             html += '<tr><td colspan="10" style="text-align:center;padding:3rem;color:var(--gray);">No bids have been submitted yet.</td></tr>'
         else:
             for b in enhanced:
-                row_class = "fair-row" if b["is_fair"] else "unfair-row"
+                row_class = "approved-row" if b["admin_status"] == "approved" else "rejected-row" if b["admin_status"] == "rejected" else "pending-row" if b["admin_status"] == "pending" else ""
                 company_info = f"{b['company_name']}<br><small>{b['email']}<br>{b['phone']}</small>"
-                decision_class = "approved" if b["admin_status"] == "approved" else "rejected" if b["admin_status"] == "rejected" else ""
-                decision_text = b["admin_status"].capitalize() if b["admin_status"] != "pending" else "Pending"
+                decision_class = "approved" if b["admin_status"] == "approved" else "rejected" if b["admin_status"] == "rejected" else "pending"
+                decision_text = b["admin_status"].capitalize() if b["admin_status"] != "pending" else "Pending Review"
                 comment_text = b["comments"] or "—"
                 action_html = f"<span style='color:var(--gray);font-style:italic;'>Already {decision_text}</span>"
 
@@ -848,37 +869,6 @@ def admin_dashboard(request: Request):
     except Exception as e:
         print(f"Dashboard error: {e}")
         return HTMLResponse("<h2 style='color:red;text-align:center;'>Error loading dashboard</h2>")
-
-# ── Admin approve/reject routes ─────────────────────────
-
-@app.post("/admin/bids/{bid_id}/approve", response_class=RedirectResponse)
-async def admin_approve_bid(bid_id: int, comments: str = Form(None)):
-    try:
-        with get_db() as (cur, conn):
-            cur.execute(
-                "UPDATE bids SET admin_status = %s, comments = %s WHERE id = %s",
-                ('approved', comments, bid_id)
-            )
-            conn.commit()
-        return RedirectResponse(url="/admin/dashboard", status_code=303)
-    except Exception as e:
-        print(f"[ERROR admin_approve] {e}")
-        return RedirectResponse(url="/admin/dashboard", status_code=303)
-
-@app.post("/admin/bids/{bid_id}/reject", response_class=RedirectResponse)
-async def admin_reject_bid(bid_id: int, comments: str = Form(None)):
-    try:
-        with get_db() as (cur, conn):
-            cur.execute(
-                "UPDATE bids SET admin_status = %s, comments = %s WHERE id = %s",
-                ('rejected', comments, bid_id)
-            )
-            conn.commit()
-        return RedirectResponse(url="/admin/dashboard", status_code=303)
-    except Exception as e:
-        print(f"[ERROR admin_reject] {e}")
-        return RedirectResponse(url="/admin/dashboard", status_code=303)
-
 # ── Debug endpoints ───────────────────────────────
 
 @app.get("/debug/bids")
@@ -901,4 +891,5 @@ def debug_admin(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
